@@ -435,13 +435,16 @@ async def review_saved_upload(
 @require_google
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
+    await message.reply_text("Reading receipt...")
     photo = message.photo[-1]
     user_dir = TMP_DIR / str(update.effective_user.id)
     user_dir.mkdir(parents=True, exist_ok=True)
     original = user_dir / "original.jpg"
     file = await photo.get_file()
     await file.download_to_drive(original)
-    return await review_saved_upload(message, context, update.effective_user.id, original)
+    return await review_saved_upload(
+        message, context, update.effective_user.id, original, announce=False
+    )
 
 
 @require_google

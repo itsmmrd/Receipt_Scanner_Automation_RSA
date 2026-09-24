@@ -125,36 +125,58 @@ def _retry_delay(exc: Exception) -> float | None:
     return float(match.group(1))
 
 
+def _model_order() -> tuple[str, ...]:
+    if _preferred_model and _preferred_model in MODELS:
+        return (_preferred_model, *[model for model in MODELS if model != _preferred_model])
+    return MODELS
+
+
+def _client_for(api_key: str | None) -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=api_key or get_api_key())
+    return _client
+
+
+def _image_for_model(image_path: Path) -> tuple[bytes, str]:
+    """Shrink the photo Gemini reads. The file saved to Drive stays the original."""
+    mime = MIME_TYPES.get(image_path.suffix.lower())
+    if mime is None:
+        raise ValueError(f"Unsupported image type: {image_path.suffix}")
+    with PILImage.open(image_path) as image:
+        image = image.convert("RGB")
+        if max(image.size) <= 1280 and image_path.stat().st_size <= 500_000:
+            return image_path.read_bytes(), mime
+        image.thumbnail((1280, 1280), PILImage.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=80)
+        return buffer.getvalue(), "image/jpeg"
+
+
 def _generate(client: genai.Client, contents: list, schema: type[BaseModel]):
-    """Try each model. A used-up daily quota skips that model; a short rate limit waits once."""
+    """Try the fastest model that still has quota. Skip a model instead of waiting on it."""
+    global _preferred_model
     quota_models: list[str] = []
     last_error: Exception | None = None
-    for model in MODELS:
-        for attempt in range(2):
-            try:
-                return client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=schema,
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
-                delay = _retry_delay(exc)
-                if (
-                    attempt == 0
-                    and _is_quota(exc)
-                    and not _is_daily_quota(exc)
-                    and delay is not None
-                    and delay <= 60
-                ):
-                    time.sleep(delay + 0.5)
-                    continue
-                if _is_quota(exc):
-                    quota_models.append(model)
-                break
+    for model in _model_order():
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if _is_quota(exc):
+                quota_models.append(model)
+                if model == _preferred_model:
+                    _preferred_model = None
+            continue
+        _preferred_model = model
+        return response
     if quota_models and (last_error is None or _is_quota(last_error)):
         raise RuntimeError(
             "Gemini free quota is used up for today. "
