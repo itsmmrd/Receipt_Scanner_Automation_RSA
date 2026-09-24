@@ -630,6 +630,10 @@ def quad_from_page_corners(corners, width: int, height: int) -> np.ndarray | Non
         return None
     quad[:, 0] = quad[:, 0] / 1000.0 * (width - 1)
     quad[:, 1] = quad[:, 1] / 1000.0 * (height - 1)
+    center = quad.mean(axis=0)
+    quad = center + (quad - center) * 1.04
+    quad[:, 0] = np.clip(quad[:, 0], 0, width - 1)
+    quad[:, 1] = np.clip(quad[:, 1], 0, height - 1)
     area = cv2.contourArea(quad)
     frame = float(width * height)
     if area < frame * 0.12 or area > frame * 0.98:
