@@ -397,6 +397,41 @@ async def connect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+async def review_saved_upload(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    original: Path,
+) -> int:
+    """Read the uploaded file as-is. The saved copy is this file, not a crop."""
+    await message.reply_text("Reading receipt...")
+    try:
+        info = await asyncio.to_thread(extract_receipt, original)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Extract failed")
+        await message.reply_text(f"Could not process this photo: {exc}")
+        return ConversationHandler.END
+
+    preview = original.parent / "preview.jpg"
+    shutil.copyfile(original, preview)
+    store_info(context, info)
+    context.user_data["original"] = str(original)
+    context.user_data["processed"] = str(original)
+    context.user_data["has_photo"] = True
+    persist_review_session(context, user_id)
+    name = next_receipt_name(user_id, info.date)
+    await reply_processed_preview(
+        message,
+        preview,
+        caption=f"{format_info(info, name)}\n\nSave this photo?",
+        reply_markup=review_keyboard(info),
+    )
+    return REVIEW
+
+
 @require_google
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
@@ -404,37 +439,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     user_dir = TMP_DIR / str(update.effective_user.id)
     user_dir.mkdir(parents=True, exist_ok=True)
     original = user_dir / "original.jpg"
-    processed = user_dir / "processed.jpg"
-
-    await message.reply_text("Reading receipt...")
     file = await photo.get_file()
     await file.download_to_drive(original)
+    return await review_saved_upload(message, context, update.effective_user.id, original)
 
-    try:
-        # AI reads the original upload; scan/clean is only for preview and saving.
-        info = await asyncio.to_thread(extract_receipt, original)
-        await asyncio.to_thread(scan_image, original, False, processed)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Extract/scan failed")
-        await message.reply_text(f"Could not process this photo: {exc}")
+
+@require_google
+async def handle_image_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    document = message.document
+    suffix = Path(document.file_name or "receipt.jpg").suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        await message.reply_text("Send a photo or an image file.")
         return ConversationHandler.END
-
-    store_info(context, info)
-    context.user_data["original"] = str(original)
-    context.user_data["processed"] = str(processed)
-    context.user_data["has_photo"] = True
-    persist_review_session(context, update.effective_user.id)
-    name = next_receipt_name(update.effective_user.id, info.date)
-    await reply_processed_preview(
-        message,
-        processed,
-        caption=(
-            f"Processed result\n\n{format_info(info, name)}\n\n"
-            "Is this result OK?"
-        ),
-        reply_markup=review_keyboard(info),
-    )
-    return REVIEW
+    user_dir = TMP_DIR / str(update.effective_user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    original = user_dir / f"original{suffix}"
+    file = await document.get_file()
+    await file.download_to_drive(original)
+    return await review_saved_upload(message, context, update.effective_user.id, original)
 
 
 async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
