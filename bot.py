@@ -415,7 +415,7 @@ async def review_saved_upload(
         await message.reply_text(f"Could not process this photo: {exc}")
         return ConversationHandler.END
 
-    preview = original.parent / "preview.jpg"
+    preview = original.with_name(f"preview{original.suffix}")
     shutil.copyfile(original, preview)
     store_info(context, info)
     context.user_data["original"] = str(original)
