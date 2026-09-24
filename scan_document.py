@@ -263,6 +263,83 @@ def _content_quad(image: np.ndarray) -> np.ndarray | None:
     return _quad_from_box(x, y, box_w, box_h, width, height, 0.03)
 
 
+def _quads_from_mask(mask: np.ndarray) -> list[np.ndarray]:
+    """Turn a paper mask into four-corner frames, including skewed pages."""
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    quads: list[np.ndarray] = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
+        peri = cv2.arcLength(contour, True)
+        if peri < 40:
+            continue
+        for factor in (0.01, 0.02, 0.035, 0.05):
+            approx = cv2.approxPolyDP(contour, factor * peri, True)
+            if len(approx) == 4 and cv2.isContourConvex(approx):
+                quads.append(approx.reshape(4, 2).astype(np.float32))
+                break
+        else:
+            rect = cv2.minAreaRect(contour)
+            quads.append(cv2.boxPoints(rect).astype(np.float32))
+    return quads
+
+
+def _paper_mask(image: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, bright = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    edges = cv2.Canny(blur, 40, 120)
+    edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), 1)
+    closed = cv2.morphologyEx(
+        cv2.bitwise_or(bright, edges),
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)),
+        iterations=2,
+    )
+    return closed
+
+
+def detect_document_frame(image: np.ndarray) -> np.ndarray | None:
+    """Find the page corners the way a scanner does, even when the page is tilted."""
+    height, width = image.shape[:2]
+    mask = _paper_mask(image)
+    best = None
+    best_score = -1.0
+    for quad in _quads_from_mask(mask):
+        if not _valid_quad(quad, width, height):
+            continue
+        area = cv2.contourArea(quad.astype(np.float32))
+        ordered = order_points(quad)
+        angles = 0.0
+        for index in range(4):
+            pivot = ordered[index]
+            before = ordered[index - 1] - pivot
+            after = ordered[(index + 1) % 4] - pivot
+            denom = float(np.linalg.norm(before) * np.linalg.norm(after)) + 1e-6
+            angles += 1.0 - abs(float(np.dot(before, after)) / denom)
+        score = (area / float(width * height)) * 5.0 + angles
+        if score > best_score:
+            best_score = score
+            best = ordered
+    return best
+
+
+def _text_is_sideways(image: np.ndarray) -> bool:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    small = resize_to_height(gray, 400) if gray.shape[0] > 400 else gray
+    horizontal = cv2.Sobel(small, cv2.CV_32F, 0, 1, ksize=3)
+    vertical = cv2.Sobel(small, cv2.CV_32F, 1, 0, ksize=3)
+    return float(np.mean(np.abs(vertical))) > float(np.mean(np.abs(horizontal))) * 1.2
+
+
+def make_upright(image: np.ndarray) -> np.ndarray:
+    """Rotate a straightened page so the text lines run left to right."""
+    if not _text_is_sideways(image):
+        return image
+    turned = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    if _text_is_sideways(turned):
+        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return turned
+
+
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
     content = _content_quad(image)
