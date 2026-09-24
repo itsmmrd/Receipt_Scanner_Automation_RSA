@@ -375,7 +375,9 @@ def append_sheet_row(
 
 
 def list_records(telegram_id: int) -> list[list[str]]:
-    record = ensure_google_workspace(telegram_id)
+    record = load_user(telegram_id)
+    if not record.get("spreadsheet_id"):
+        record = ensure_google_workspace(telegram_id)
     _drive, sheets = _services(record)
     result = (
         sheets.spreadsheets()
