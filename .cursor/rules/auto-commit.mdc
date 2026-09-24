@@ -17,13 +17,13 @@ When a task changes files, commit that work before you stop. Do not wait to be a
 
 ## Commit message
 
-The message must say what changed and why. Name the files and the behavior that changed.
+`.cursor/hooks/auto-commit.sh` commits through `scripts/commit_message.py`. That script must write a specific title plus bullets. A title that is only `Update <filename>` is not acceptable.
 
 ```
-Add auto-commit rule for finished agent work.
+Keep a full-page receipt upright instead of cropping one table
 
-- Add .cursor/rules/auto-commit.mdc so each finished change is committed.
-- Require the message to list the files and the behavior that changed.
+- scan_document.py: def _content_fills_frame
+- scan_document.py: skip the crop when the page already fills the photo
 ```
 
-Use a short first line, a blank line, then bullets for the actual edits.
+The title says what behavior changed. Each bullet names the file and the function, comment, or line that changed. Do not stop at the filename.

@@ -101,12 +101,89 @@ def title_for_files(files: list[str], added: list[str]) -> str:
     return f"Update {pretty}"
 
 
+def _hunks(diff: str) -> list[tuple[str, str, list[str]]]:
+    file_name = ""
+    func = ""
+    added: list[str] = []
+    hunks: list[tuple[str, str, list[str]]] = []
+
+    def flush() -> None:
+        if file_name and added:
+            hunks.append((file_name, func, list(added)))
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git"):
+            flush()
+            file_name = ""
+            func = ""
+            added = []
+        elif line.startswith("+++ b/"):
+            file_name = line[6:]
+        elif line.startswith("@@"):
+            flush()
+            added = []
+            parts = line.split("@@")
+            func = parts[2].strip() if len(parts) > 2 else ""
+        elif line.startswith("+") and not line.startswith("+++"):
+            text = line[1:].strip()
+            if text and not text.startswith(("import ", "from ")):
+                added.append(text)
+    flush()
+    return hunks
+
+
+def _bullet(file_name: str, func: str, added: list[str]) -> str:
+    name = Path(file_name).name
+    defs = [
+        line.split("(", 1)[0].removeprefix("async ").strip()
+        for line in added
+        if line.startswith(("def ", "async def ", "class "))
+    ]
+    if defs:
+        return f"{name}: {', '.join(defs[:3])}"
+    comment = next(
+        (line.strip("\"' ") for line in added if line.startswith(("#", '"""', "'''"))),
+        "",
+    )
+    if comment:
+        return f"{name}: {comment[:160]}"
+    where = f" in {func}" if func else ""
+    return f"{name}{where}: {added[0][:160]}"
+
+
+def change_details() -> list[str]:
+    diff = run("diff", "--cached", "--unified=3")
+    bullets: list[str] = []
+    seen: set[str] = set()
+    for file_name, func, added in _hunks(diff):
+        bullet = _bullet(file_name, func, added)
+        if bullet in seen:
+            continue
+        seen.add(bullet)
+        bullets.append(bullet)
+        if len(bullets) == 8:
+            break
+    return bullets
+
+
 def main() -> None:
     files = staged_files()
     if not files:
         print("Update project files")
         return
-    print(title_for_files(files, added_lines()))
+    title = title_for_files(files, added_lines())
+    details = change_details()
+    if title.startswith("Update ") and details:
+        summary = details[0].split(": ", 1)[-1]
+        title = summary[:1].upper() + summary[1:]
+        if len(title) > 72:
+            title = title[:69].rstrip() + "..."
+    if not details:
+        details = [f"Edit {Path(path).name}" for path in files]
+    print(title)
+    print()
+    for bullet in details:
+        print(f"- {bullet}")
 
 
 if __name__ == "__main__":
