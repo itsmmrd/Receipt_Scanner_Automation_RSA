@@ -342,6 +342,9 @@ def make_upright(image: np.ndarray) -> np.ndarray:
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
+    frame = detect_document_frame(image)
+    if frame is not None:
+        return frame
     content = _content_quad(image)
     if content is not None:
         coverage = cv2.contourArea(content.astype(np.float32)) / float(width * height)
