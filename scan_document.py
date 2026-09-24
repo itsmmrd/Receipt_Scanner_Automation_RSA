@@ -62,6 +62,10 @@ def warp_ordered(image: np.ndarray, rect: np.ndarray) -> np.ndarray:
     return cv2.warpPerspective(image, matrix, (max_width, max_height))
 
 
+def four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    return warp_ordered(image, order_points(pts))
+
+
 def resize_to_height(image: np.ndarray, height: int) -> np.ndarray:
     h, w = image.shape[:2]
     scale = height / float(h)
