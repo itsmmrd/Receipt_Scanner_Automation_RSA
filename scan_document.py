@@ -223,6 +223,18 @@ def detect_from_paper_edges(image: np.ndarray) -> np.ndarray | None:
     return best
 
 
+def _content_fills_frame(image: np.ndarray) -> bool:
+    """True when the photo is already a full page, not a receipt on a table."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    points = cv2.findNonZero(ink)
+    if points is None:
+        return True
+    _x, _y, box_w, box_h = cv2.boundingRect(points)
+    height, width = image.shape[:2]
+    return box_w >= width * 0.72 and box_h >= height * 0.72
+
+
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
     candidates: list[np.ndarray] = []
