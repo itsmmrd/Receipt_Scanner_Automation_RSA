@@ -395,7 +395,7 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
         output_path = OUTPUT_DIR / image_path.name
     else:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output_path), scanned)
+    _write_jpeg(output_path, scanned)
     return output_path
 
 
