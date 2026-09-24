@@ -661,6 +661,60 @@ def _quad_angle_range(quad: np.ndarray) -> float:
     return float(max(angles) - min(angles))
 
 
+def _scanner_corners(edged: np.ndarray) -> list[tuple[int, int]]:
+    """Ends of the longest horizontal and vertical edges. Same idea as Document-Scanner."""
+    if not hasattr(cv2, "createLineSegmentDetector"):
+        return []
+    detected = cv2.createLineSegmentDetector(0).detect(edged)[0]
+    if detected is None:
+        return []
+    horizontal = np.zeros(edged.shape, dtype=np.uint8)
+    vertical = np.zeros(edged.shape, dtype=np.uint8)
+    height, width = edged.shape[:2]
+    for row in detected.reshape(-1, 4):
+        x1, y1, x2, y2 = (int(v) for v in row)
+        if abs(x2 - x1) > abs(y2 - y1):
+            (x1, y1), (x2, y2) = sorted(((x1, y1), (x2, y2)))
+            cv2.line(horizontal, (max(x1 - 5, 0), y1), (min(x2 + 5, width - 1), y2), 255, 2)
+        else:
+            (x1, y1), (x2, y2) = sorted(((x1, y1), (x2, y2)), key=lambda pt: pt[1])
+            cv2.line(vertical, (x1, max(y1 - 5, 0)), (x2, min(y2 + 5, height - 1)), 255, 2)
+
+    corners: list[tuple[int, int]] = []
+
+    def line_ends(canvas: np.ndarray, horizontal_lines: bool) -> None:
+        contours, _ = cv2.findContours(canvas, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours = sorted(contours, key=lambda c: cv2.arcLength(c, True), reverse=True)[:2]
+        for contour in contours:
+            points = contour.reshape(-1, 2)
+            if horizontal_lines:
+                min_x = int(np.min(points[:, 0])) + 2
+                max_x = int(np.max(points[:, 0])) - 2
+                left = points[points[:, 0] == min(points[:, 0])]
+                right = points[points[:, 0] == max(points[:, 0])]
+                if left.size == 0 or right.size == 0:
+                    continue
+                y1 = int(np.mean(left[:, 1]))
+                y2 = int(np.mean(right[:, 1]))
+                corners.append((min_x, y1))
+                corners.append((max_x, y2))
+            else:
+                top = points[points[:, 1] == min(points[:, 1])]
+                bottom = points[points[:, 1] == max(points[:, 1])]
+                if top.size == 0 or bottom.size == 0:
+                    continue
+                corners.append((int(np.mean(top[:, 0])), int(np.min(points[:, 1])) + 2))
+                corners.append((int(np.mean(bottom[:, 0])), int(np.max(points[:, 1])) - 2))
+
+    line_ends(horizontal, True)
+    line_ends(vertical, False)
+    kept: list[tuple[int, int]] = []
+    for corner in corners:
+        if all((corner[0] - old[0]) ** 2 + (corner[1] - old[1]) ** 2 >= 20 ** 2 for old in kept):
+            kept.append(corner)
+    return kept
+
+
 def document_scanner_quad(image: np.ndarray) -> np.ndarray:
     """Find the page the way sangamprashant/Document-Scanner does.
 
