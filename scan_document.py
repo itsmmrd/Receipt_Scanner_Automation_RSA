@@ -311,13 +311,19 @@ def fit_telegram_photo(image: np.ndarray) -> np.ndarray:
     return image
 
 
+def _write_jpeg(path: Path, image: np.ndarray) -> None:
+    cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+
 def ensure_telegram_photo_file(path: Path) -> Path:
-    """Rewrite image on disk so sendPhoto will accept it."""
+    """Resize only when Telegram would reject the photo. Leave good files untouched."""
     image = cv2.imread(str(path))
     if image is None:
         return path
-    fitted = fit_telegram_photo(image)
-    cv2.imwrite(str(path), fitted)
+    height, width = image.shape[:2]
+    if _photo_limits_ok(width, height):
+        return path
+    _write_jpeg(path, fit_telegram_photo(image))
     return path
 
 
