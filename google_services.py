@@ -378,7 +378,10 @@ def list_records(telegram_id: int) -> list[list[str]]:
     record = load_user(telegram_id)
     if not record.get("spreadsheet_id"):
         record = ensure_google_workspace(telegram_id)
-    _drive, sheets = _services(record)
+    creds = credentials_from_record(record)
+    if creds is None:
+        raise RuntimeError("Google account is not connected.")
+    sheets = _google_service("sheets", "v4", creds)
     result = (
         sheets.spreadsheets()
         .values()
