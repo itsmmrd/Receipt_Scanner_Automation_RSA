@@ -10,11 +10,13 @@ Set GEMINI_API_KEY in .env or the environment.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
-import time
 from pathlib import Path
+
+from PIL import Image as PILImage
 
 from google import genai
 from google.genai import types
