@@ -173,24 +173,33 @@ def change_details() -> list[str]:
     return bullets
 
 
+def short_summary(files: list[str], added: list[str]) -> str:
+    """One sentence about the change. Never a line of source code."""
+    title = title_for_files(files, added)
+    if not title.startswith("Update "):
+        return title
+    names = {Path(path).name for path in files}
+    if names & {"scan_document.py", "document_segment.py"}:
+        return "Straighten the receipt photo to the page frame"
+    if names & {"google_services.py"}:
+        return "Speed up Google Drive and Sheets calls"
+    if names & {"bot.py"}:
+        return "Adjust the Telegram receipt flow"
+    if names & {"commit_message.py", "auto-commit.mdc", "auto-commit.sh"}:
+        return "Use a short sentence for each commit"
+    if names & {"requirements.txt"}:
+        return "Update Python dependencies"
+    if len(names) == 1:
+        return f"Update {next(iter(names))}"
+    return "Update " + ", ".join(sorted(names))
+
+
 def main() -> None:
     files = staged_files()
     if not files:
         print("Update project files")
         return
-    title = title_for_files(files, added_lines())
-    details = change_details()
-    if title.startswith("Update ") and details:
-        summary = details[0].split(": ", 1)[-1]
-        title = summary[:1].upper() + summary[1:]
-        if len(title) > 72:
-            title = title[:69].rstrip() + "..."
-    if not details:
-        details = [f"Edit {Path(path).name}" for path in files]
-    print(title)
-    print()
-    for bullet in details:
-        print(f"- {bullet}")
+    print(short_summary(files, added_lines()))
 
 
 if __name__ == "__main__":

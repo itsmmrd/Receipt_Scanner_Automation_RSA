@@ -17,13 +17,10 @@ When a task changes files, commit that work before you stop. Do not wait to be a
 
 ## Commit message
 
-`.cursor/hooks/auto-commit.sh` commits through `scripts/commit_message.py`. That script must write a specific title plus bullets. A title that is only `Update <filename>` is not acceptable.
+`.cursor/hooks/auto-commit.sh` commits through `scripts/commit_message.py`. The message is one short sentence about the behavior that changed.
 
 ```
-Keep a full-page receipt upright instead of cropping one table
-
-- scan_document.py: def _content_fills_frame
-- scan_document.py: skip the crop when the page already fills the photo
+Straighten the receipt photo to the page frame
 ```
 
-The title says what behavior changed. Each bullet names the file and the function, comment, or line that changed. Do not stop at the filename.
+Do not put source code, function names, or a list of lines in the message.
