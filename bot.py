@@ -260,10 +260,7 @@ def edit_keyboard() -> InlineKeyboardMarkup:
 def review_keyboard(info: ReceiptInfo) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("Save result", callback_data="save_result"),
-                InlineKeyboardButton("Save original", callback_data="save_original"),
-            ],
+            [InlineKeyboardButton("Save", callback_data="save_original")],
             [InlineKeyboardButton("Link to existing", callback_data="link_existing")],
             [
                 edit_text_button(),
