@@ -179,27 +179,12 @@ def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo
         "If a field is unreadable, return null for that field."
     )
     image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
-    last_error: Exception | None = None
-
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[image_part, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ReceiptInfo,
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            if response.text:
-                return ReceiptInfo.model_validate_json(response.text)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
-
-    raise RuntimeError(f"Gemini could not extract receipt data: {last_error}")
+    response = _generate(client, [image_part, prompt], ReceiptInfo)
+    if response.parsed is not None:
+        return response.parsed
+    if response.text:
+        return ReceiptInfo.model_validate_json(response.text)
+    raise RuntimeError("Gemini returned an empty receipt.")
 
 
 def extract_receipt_from_text(text: str, api_key: str | None = None) -> ReceiptInfo:
