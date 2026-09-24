@@ -503,12 +503,18 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
         output_path = OUTPUT_DIR / image_path.name
     else:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Nothing to trim: keep the original file instead of recompressing it.
-    if quad_area >= frame_area * 0.96:
+    ordered = order_points(quad)
+    corners = np.array(
+        [[0, 0], [rescaled.shape[1] - 1, 0], [rescaled.shape[1] - 1, rescaled.shape[0] - 1], [0, rescaled.shape[0] - 1]],
+        dtype=np.float32,
+    )
+    already_framed = quad_area >= frame_area * 0.97 and float(np.max(np.abs(ordered - corners))) < 8
+    if already_framed:
         if output_path.resolve() != image_path.resolve():
             shutil.copyfile(image_path, output_path)
         return output_path
     warped = four_point_transform(image, quad * ratio)
+    warped = make_upright(warped)
     if not _usable_page(warped):
         warped = image.copy()
     scanned = enhance_high_contrast(warped) if high_contrast else enhance_readable(warped)
