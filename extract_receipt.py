@@ -204,7 +204,8 @@ def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo
         "from the items and time when possible. "
         "If a field is unreadable, return null for that field."
     )
-    image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
+    image_bytes, image_mime = _image_for_model(image_path)
+    image_part = types.Part.from_bytes(data=image_bytes, mime_type=image_mime)
     response = _generate(client, [image_part, prompt], ReceiptInfo)
     if response.parsed is not None:
         return response.parsed
