@@ -641,6 +641,61 @@ def quad_from_page_corners(corners, width: int, height: int) -> np.ndarray | Non
     return quad
 
 
+def _quad_angle_range(quad: np.ndarray) -> float:
+    """How far the four interior angles are from each other. A page is near 90 degrees."""
+    tl, tr, br, bl = order_points(quad)
+
+    def angle(p1, p2, p3) -> float:
+        u = np.asarray(p1, dtype=np.float64) - np.asarray(p2, dtype=np.float64)
+        v = np.asarray(p3, dtype=np.float64) - np.asarray(p2, dtype=np.float64)
+        cos = float(np.dot(u, v)) / (float(np.linalg.norm(u) * np.linalg.norm(v)) + 1e-6)
+        return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
+
+    angles = (
+        angle(tl, tr, br),
+        angle(bl, tl, tr),
+        angle(tr, br, bl),
+        angle(br, bl, tl),
+    )
+    return float(max(angles) - min(angles))
+
+
+def document_scanner_quad(image: np.ndarray) -> np.ndarray:
+    """Find the page the way sangamprashant/Document-Scanner does.
+
+    Blur, close gaps, Canny edges, then the largest four-corner outline that
+    covers a real share of the photo. If none is found, keep the whole photo.
+    """
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (7, 7), 0)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+    closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+    edged = cv2.Canny(closed, 0, 84)
+    contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    epsilon = 80.0 * (height / 500.0)
+    best = None
+    best_area = 0.0
+    frame = float(width * height)
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        if len(approx) != 4:
+            continue
+        quad = approx.reshape(4, 2).astype(np.float32)
+        area = cv2.contourArea(quad)
+        if area < frame * 0.25 or _quad_angle_range(quad) > 40:
+            continue
+        if area > best_area:
+            best_area = area
+            best = order_points(quad)
+    if best is None:
+        return np.array(
+            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+            dtype=np.float32,
+        )
+    return best
+
+
 def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path | None = None) -> Path:
     image = cv2.imread(str(image_path))
     if image is None:
