@@ -464,6 +464,9 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     action = query.data
+    if action == "download_pdf":
+        await download_pdf_callback(update, context)
+        return REVIEW
     if action == "cancel":
         await edit_callback_message(query, "Cancelled. Nothing was saved.")
         return ConversationHandler.END
