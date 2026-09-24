@@ -610,6 +610,28 @@ def _usable_page(image: np.ndarray) -> bool:
     return aspect <= 12
 
 
+def quad_from_page_corners(corners, width: int, height: int) -> np.ndarray | None:
+    """Turn Gemini's 0-1000 corners into image pixels. None if they are unusable."""
+    if corners is None or not corners.found:
+        return None
+    points = (
+        (corners.top_left_x, corners.top_left_y),
+        (corners.top_right_x, corners.top_right_y),
+        (corners.bottom_right_x, corners.bottom_right_y),
+        (corners.bottom_left_x, corners.bottom_left_y),
+    )
+    quad = np.array(points, dtype=np.float32)
+    if np.any(quad < 0) or np.any(quad > 1000):
+        return None
+    quad[:, 0] = quad[:, 0] / 1000.0 * (width - 1)
+    quad[:, 1] = quad[:, 1] / 1000.0 * (height - 1)
+    area = cv2.contourArea(quad)
+    frame = float(width * height)
+    if area < frame * 0.12 or area > frame * 0.98:
+        return None
+    return quad
+
+
 def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path | None = None) -> Path:
     image = cv2.imread(str(image_path))
     if image is None:
