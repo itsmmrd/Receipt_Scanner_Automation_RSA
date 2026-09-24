@@ -922,6 +922,7 @@ def build_application() -> Application:
     review_conv = ConversationHandler(
         entry_points=[
             MessageHandler(filters.PHOTO, handle_photo),
+            MessageHandler(filters.Document.IMAGE, handle_image_file),
             CommandHandler("add", add_start),
             CommandHandler("text", text_start),
             CommandHandler("delete", delete_start),
