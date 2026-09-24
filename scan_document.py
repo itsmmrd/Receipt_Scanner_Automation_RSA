@@ -742,7 +742,6 @@ def document_scanner_quad(image: np.ndarray) -> np.ndarray:
     epsilon = 80.0 * (height / 500.0)
     best = None
     best_area = 0.0
-    frame = float(width * height)
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
         approx = cv2.approxPolyDP(contour, epsilon, True)
         if len(approx) != 4:
