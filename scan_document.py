@@ -244,14 +244,26 @@ def _content_quad(image: np.ndarray) -> np.ndarray | None:
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
+    content = _content_quad(image)
+    content_area = (
+        cv2.contourArea(content.astype(np.float32))
+        if content is not None
+        else float(width * height)
+    )
     candidates: list[np.ndarray] = []
     for detector in (
         detect_from_text_blob,
         detect_from_paper_edges,
     ):
         quad = detector(image)
-        if quad is not None:
-            candidates.append(quad)
+        if quad is None:
+            continue
+        # A payment table or one paragraph is not the receipt.
+        if cv2.contourArea(quad.astype(np.float32)) < content_area * 0.65:
+            continue
+        candidates.append(quad)
+    if content is not None:
+        candidates.append(content)
 
     if not candidates:
         return np.array(
