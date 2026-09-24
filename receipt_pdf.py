@@ -111,18 +111,12 @@ def render_receipts_pdf(
     )
     story.append(table)
 
-    work = dest.parent / "pdf-images"
+    frame_w = PAGE_WIDTH - 2 * MARGIN
+    frame_h = PAGE_HEIGHT - 2 * MARGIN - 1
     for row in rows:
         name = _cell(row, 0)
         story.append(PageBreak())
-        story.append(Paragraph(f"Receipt #{name}", styles["Heading1"]))
-        story.append(Spacer(1, 4 * mm))
-        image_path = images.get(name)
-        if image_path is None or not image_path.is_file():
-            story.append(Paragraph("No photo saved for this receipt.", styles["Normal"]))
-            continue
-        fitted, draw_w, draw_h = _fit_image(image_path, work / f"{name}.jpg")
-        story.append(Image(str(fitted), width=draw_w, height=draw_h))
+        story.append(ReceiptSheet(f"Receipt #{name}", images.get(name), frame_w, frame_h))
 
     doc = SimpleDocTemplate(
         str(dest),
