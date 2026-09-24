@@ -189,10 +189,6 @@ def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo
     if not image_path.is_file():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    mime = MIME_TYPES.get(image_path.suffix.lower())
-    if mime is None:
-        raise ValueError(f"Unsupported image type: {image_path.suffix}")
-
     client = _client_for(api_key)
     prompt = (
         "Read this receipt photo and extract the purchase details. "
