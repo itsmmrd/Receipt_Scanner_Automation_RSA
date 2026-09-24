@@ -425,6 +425,9 @@ def make_upright(image: np.ndarray) -> np.ndarray:
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
+    sheet = detect_sheet_corners(image)
+    if sheet is not None:
+        return sheet
     frame = detect_document_frame(image)
     if frame is not None:
         return frame
