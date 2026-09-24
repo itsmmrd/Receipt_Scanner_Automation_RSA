@@ -251,7 +251,9 @@ def _content_quad(image: np.ndarray) -> np.ndarray | None:
         x, y, box_w, box_h = cv2.boundingRect(contour)
         coverage = (box_w * box_h) / float(width * height)
         if 0.08 <= coverage <= 0.92 and box_w > width * 0.2 and box_h > height * 0.2:
-            return _quad_from_box(x, y, box_w, box_h, width, height, 0.02)
+            rect = cv2.minAreaRect(contour)
+            box = cv2.boxPoints(rect).astype(np.float32)
+            return box
 
     _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     points = cv2.findNonZero(ink)
