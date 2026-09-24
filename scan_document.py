@@ -368,11 +368,17 @@ def _baseline_is_down(image: np.ndarray) -> bool:
 
 def make_upright(image: np.ndarray) -> np.ndarray:
     """Rotate a straightened page so the text lines run left to right."""
-    page = image
-    if _text_is_sideways(page):
-        clockwise = cv2.rotate(page, cv2.ROTATE_90_CLOCKWISE)
-        counter = cv2.rotate(page, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        page = clockwise if not _text_is_sideways(clockwise) else counter
+    if not _text_is_sideways(image):
+        page = image
+    else:
+        options = (
+            cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
+            cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE),
+        )
+        upright = [item for item in options if not _text_is_sideways(item)]
+        page = upright[0] if upright else options[0]
+        if len(upright) == 2:
+            page = upright[0] if _baseline_is_down(upright[0]) else upright[1]
     if not _baseline_is_down(page):
         page = cv2.rotate(page, cv2.ROTATE_180)
     return page
