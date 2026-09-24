@@ -424,7 +424,12 @@ def download_receipt_image(telegram_id: int, name: str, dest: Path) -> Path | No
         return None
     drive = _google_service("drive", "v3", creds)
     files = _drive_image_files(drive, record["folder_id"], name)
-    images = [item for item in files if (item.get("mimeType") or "").startswith("image/")]
+    images = [
+        item
+        for item in files
+        if (item.get("mimeType") or "").startswith("image/")
+        and Path(item.get("name") or "").stem == name
+    ]
     if not images:
         return None
     request = drive.files().get_media(fileId=images[0]["id"])
