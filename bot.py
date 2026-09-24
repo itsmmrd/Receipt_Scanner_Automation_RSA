@@ -405,9 +405,12 @@ async def review_saved_upload(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     original: Path,
+    *,
+    announce: bool = True,
 ) -> int:
     """Read the uploaded file as-is. The saved copy is this file, not a crop."""
-    await message.reply_text("Reading receipt...")
+    if announce:
+        await message.reply_text("Reading receipt...")
     try:
         info = await asyncio.to_thread(extract_receipt, original)
     except Exception as exc:  # noqa: BLE001
