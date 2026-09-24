@@ -637,9 +637,19 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
     if image is None:
         raise ValueError(f"Could not read image: {image_path}")
 
-    ratio = image.shape[0] / RESCALED_HEIGHT
-    rescaled = resize_to_height(image, int(RESCALED_HEIGHT))
-    quad = find_document_quad(rescaled)
+    height, width = image.shape[:2]
+    ratio = 1.0
+    quad = None
+    try:
+        from extract_receipt import locate_page_corners
+
+        quad = quad_from_page_corners(locate_page_corners(image_path), width, height)
+    except Exception:
+        quad = None
+    if quad is None:
+        ratio = image.shape[0] / RESCALED_HEIGHT
+        rescaled = resize_to_height(image, int(RESCALED_HEIGHT))
+        quad = find_document_quad(rescaled)
     quad_area = cv2.contourArea(quad.astype(np.float32))
     frame_area = float(rescaled.shape[0] * rescaled.shape[1])
     if output_path is None:
