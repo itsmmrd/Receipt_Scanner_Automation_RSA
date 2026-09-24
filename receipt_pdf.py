@@ -25,26 +25,46 @@ def _cell(row: list[str], index: int) -> str:
     return str(row[index] or "")
 
 
-def _fit_image(path: Path, dest: Path) -> tuple[Path, float, float]:
-    """Scale a photo so it fits one page without rewriting the Drive original."""
-    max_w = PAGE_WIDTH - 2 * MARGIN
-    max_h = PAGE_HEIGHT - 2 * MARGIN - 18 * mm
-    with PILImage.open(path) as image:
-        image = image.convert("RGB")
-        width, height = image.size
-        scale = min(max_w / width, max_h / height, 1.0)
-        draw_w = width * scale
-        draw_h = height * scale
-        # Keep enough pixels for a printed page, and leave the Drive file untouched.
-        pixel_scale = min(1600 / max(width, 1), 1600 / max(height, 1), 1.0)
-        if pixel_scale < 1:
-            image = image.resize(
-                (max(1, int(width * pixel_scale)), max(1, int(height * pixel_scale))),
-                PILImage.Resampling.LANCZOS,
-            )
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        image.save(dest, format="JPEG", quality=90)
-    return dest, draw_w, draw_h
+class ReceiptSheet(Flowable):
+    """One page: the receipt number at the top, the photo directly under it."""
+
+    def __init__(self, title: str, image_path: Path | None, width: float, height: float):
+        super().__init__()
+        self.title = title
+        self.image_path = image_path
+        self.box_w = width
+        self.box_h = height
+
+    def wrap(self, availWidth, availHeight):
+        return self.box_w, min(self.box_h, availHeight)
+
+    def draw(self):
+        label_h = 8 * mm
+        self.canv.setFillColor(colors.black)
+        self.canv.setFont("Helvetica-Bold", 14)
+        self.canv.drawString(0, self.box_h - 5 * mm, self.title)
+        if self.image_path is None or not self.image_path.is_file():
+            self.canv.setFont("Helvetica", 11)
+            self.canv.drawString(0, self.box_h - label_h - 4 * mm, "No photo saved for this receipt.")
+            return
+        with PILImage.open(self.image_path) as image:
+            image_w, image_h = image.size
+        max_w = self.box_w
+        max_h = self.box_h - label_h
+        scale = min(max_w / image_w, max_h / image_h)
+        draw_w = image_w * scale
+        draw_h = image_h * scale
+        x = (self.box_w - draw_w) / 2
+        y = max_h - draw_h
+        self.canv.drawImage(
+            str(self.image_path),
+            x,
+            y,
+            width=draw_w,
+            height=draw_h,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
 
 
 def render_receipts_pdf(
