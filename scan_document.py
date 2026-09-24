@@ -266,6 +266,11 @@ def _content_quad(image: np.ndarray) -> np.ndarray | None:
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
     content = _content_quad(image)
+    if content is not None:
+        coverage = cv2.contourArea(content.astype(np.float32)) / float(width * height)
+        # A sheet on a table is the receipt. Do not replace it with a bigger outline.
+        if coverage <= 0.92:
+            return content
     content_area = (
         cv2.contourArea(content.astype(np.float32))
         if content is not None
