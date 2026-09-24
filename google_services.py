@@ -215,13 +215,33 @@ def finish_oauth(telegram_id: int, callback_url: str) -> dict[str, Any]:
     return load_user(telegram_id)
 
 
+_built_services: dict[str, tuple[str, Any]] = {}
+_service_lock = threading.Lock()
+
+
+def _google_service(name: str, version: str, creds: Credentials):
+    """Reuse one API client per access token. Building a client downloads discovery docs."""
+    token = creds.token or ""
+    with _service_lock:
+        cached = _built_services.get(name)
+        if cached is not None and cached[0] == token:
+            return cached[1]
+        service = build(
+            name,
+            version,
+            credentials=creds,
+            cache_discovery=False,
+            static_discovery=True,
+        )
+        _built_services[name] = (token, service)
+        return service
+
+
 def _services(record: dict[str, Any]):
     creds = credentials_from_record(record)
     if creds is None:
         raise RuntimeError("Google account is not connected.")
-    return build("drive", "v3", credentials=creds), build(
-        "sheets", "v4", credentials=creds
-    )
+    return _google_service("drive", "v3", creds), _google_service("sheets", "v4", creds)
 
 
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
