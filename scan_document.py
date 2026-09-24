@@ -39,8 +39,9 @@ def order_points(pts: np.ndarray) -> np.ndarray:
     )
 
 
-def four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
-    rect = order_points(pts)
+def warp_ordered(image: np.ndarray, rect: np.ndarray) -> np.ndarray:
+    """Straighten using the given corner order: top-left, top-right, bottom-right, bottom-left."""
+    rect = np.asarray(rect, dtype=np.float32).reshape(4, 2)
     (tl, tr, br, bl) = rect
     width_a = np.linalg.norm(br - bl)
     width_b = np.linalg.norm(tr - tl)
