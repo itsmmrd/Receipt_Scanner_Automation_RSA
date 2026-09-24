@@ -389,22 +389,22 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
 
     ratio = image.shape[0] / RESCALED_HEIGHT
     rescaled = resize_to_height(image, int(RESCALED_HEIGHT))
-    if _content_fills_frame(rescaled):
-        if output_path is None:
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_path = OUTPUT_DIR / image_path.name
-        else:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+    quad = find_document_quad(rescaled)
+    quad_area = cv2.contourArea(quad.astype(np.float32))
+    frame_area = float(rescaled.shape[0] * rescaled.shape[1])
+    if output_path is None:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = OUTPUT_DIR / image_path.name
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Nothing to trim: keep the original file instead of recompressing it.
+    if quad_area >= frame_area * 0.96:
         if output_path.resolve() != image_path.resolve():
             shutil.copyfile(image_path, output_path)
         return output_path
-    else:
-        quad = find_document_quad(rescaled)
-        warped = four_point_transform(image, quad * ratio)
-        if warped.shape[1] > warped.shape[0]:
-            warped = cv2.rotate(warped, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        if not _usable_page(warped):
-            warped = image.copy()
+    warped = four_point_transform(image, quad * ratio)
+    if not _usable_page(warped):
+        warped = image.copy()
     scanned = enhance_high_contrast(warped) if high_contrast else enhance_readable(warped)
     scanned = fit_telegram_photo(scanned)
 
