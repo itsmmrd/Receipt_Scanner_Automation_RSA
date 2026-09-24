@@ -760,7 +760,10 @@ async def sheet_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await target.reply_text(
         "Your RSA spreadsheet:",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Open Sheet", url=sheet_url)]]
+            [
+                [InlineKeyboardButton("Open Sheet", url=sheet_url)],
+                [InlineKeyboardButton("Download PDF", callback_data="download_pdf")],
+            ]
         ),
     )
 
