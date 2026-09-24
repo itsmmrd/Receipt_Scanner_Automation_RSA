@@ -299,6 +299,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
             body={"values": [SHEET_HEADERS]},
         ).execute()
     _apply_sheet_date_formats(sheets, record["spreadsheet_id"], sheet_id)
+    record["sheet_ready"] = True
     save_user(record)
     return record
 
