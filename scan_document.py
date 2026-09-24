@@ -727,6 +727,7 @@ def document_scanner_quad(image: np.ndarray) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
     closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
     edged = cv2.Canny(closed, 0, 84)
+    frame = float(width * height)
     corner_quads = []
     for group in itertools.combinations(_scanner_corners(edged), 4):
         quad = order_points(np.array(group, dtype=np.float32))
