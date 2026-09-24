@@ -140,10 +140,9 @@ def _score_quad(quad: np.ndarray, width: int, height: int) -> float:
     w = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
     h = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
     aspect = max(w, h) / max(min(w, h), 1.0)
-    # Prefer a sizable, tall document that is not the whole frame.
+    # Prefer the whole page. A 22% target was locking onto one table on the page.
     coverage = area / float(width * height)
-    coverage_score = 1.0 - abs(coverage - 0.22)
-    return coverage_score * 2.0 + min(aspect, 6.0)
+    return coverage * 4.0 + min(aspect, 3.0) * 0.15
 
 
 def detect_from_text_blob(image: np.ndarray) -> np.ndarray | None:
