@@ -364,13 +364,15 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
 
     ratio = image.shape[0] / RESCALED_HEIGHT
     rescaled = resize_to_height(image, int(RESCALED_HEIGHT))
-    quad = find_document_quad(rescaled)
-
-    warped = four_point_transform(image, quad * ratio)
-    if warped.shape[1] > warped.shape[0]:
-        warped = cv2.rotate(warped, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    if not _usable_page(warped):
+    if _content_fills_frame(rescaled):
         warped = image.copy()
+    else:
+        quad = find_document_quad(rescaled)
+        warped = four_point_transform(image, quad * ratio)
+        if warped.shape[1] > warped.shape[0]:
+            warped = cv2.rotate(warped, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        if not _usable_page(warped):
+            warped = image.copy()
     scanned = enhance_high_contrast(warped) if high_contrast else enhance_readable(warped)
     scanned = fit_telegram_photo(scanned)
 
