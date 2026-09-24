@@ -224,16 +224,22 @@ def detect_from_paper_edges(image: np.ndarray) -> np.ndarray | None:
     return best
 
 
-def _content_fills_frame(image: np.ndarray) -> bool:
-    """True when the photo is already a full page, not a receipt on a table."""
+def _content_quad(image: np.ndarray) -> np.ndarray | None:
+    """Axis-aligned crop of the printed page, including a small paper margin."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     points = cv2.findNonZero(ink)
     if points is None:
-        return True
-    _x, _y, box_w, box_h = cv2.boundingRect(points)
+        return None
+    x, y, box_w, box_h = cv2.boundingRect(points)
     height, width = image.shape[:2]
-    return box_w >= width * 0.72 and box_h >= height * 0.72
+    pad_x = int(box_w * 0.04)
+    pad_y = int(box_h * 0.03)
+    x0 = max(0, x - pad_x)
+    y0 = max(0, y - pad_y)
+    x1 = min(width - 1, x + box_w + pad_x)
+    y1 = min(height - 1, y + box_h + pad_y)
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float32)
 
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
