@@ -113,7 +113,7 @@ def _quad_from_contour(contour: np.ndarray) -> np.ndarray | None:
 def _valid_quad(quad: np.ndarray, width: int, height: int) -> bool:
     area = cv2.contourArea(quad.astype(np.float32))
     image_area = float(width * height)
-    if area < image_area * 0.02 or area > image_area * 0.92:
+    if area < image_area * 0.08 or area > image_area * 0.985:
         return False
 
     ordered = order_points(quad)
