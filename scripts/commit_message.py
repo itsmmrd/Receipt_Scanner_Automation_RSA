@@ -175,10 +175,12 @@ def change_details() -> list[str]:
 
 def short_summary(files: list[str], added: list[str]) -> str:
     """One sentence about the change. Never a line of source code."""
+    names = {Path(path).name for path in files}
+    if names & {"commit_message.py", "auto-commit.mdc", "auto-commit.sh"}:
+        return "Use a short sentence for each commit"
     title = title_for_files(files, added)
     if not title.startswith("Update "):
         return title
-    names = {Path(path).name for path in files}
     if names & {"scan_document.py", "document_segment.py"}:
         return "Straighten the receipt photo to the page frame"
     if names & {"google_services.py"}:
