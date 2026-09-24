@@ -330,14 +330,51 @@ def _text_is_sideways(image: np.ndarray) -> bool:
     return float(np.mean(np.abs(vertical))) > float(np.mean(np.abs(horizontal))) * 1.2
 
 
+def _baseline_is_down(image: np.ndarray) -> bool:
+    """Upright text shares a flat baseline. Upside-down text shares a flat top."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    small = resize_to_height(gray, 700) if gray.shape[0] > 700 else gray
+    _, ink = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    count, _, stats, _ = cv2.connectedComponentsWithStats(ink)
+    pieces: list[tuple[int, int]] = []
+    for index in range(1, count):
+        _x, y, w, h, area = stats[index]
+        if area < 15 or h < 6 or h > 70 or w > small.shape[1] * 0.4:
+            continue
+        pieces.append((int(y), int(y + h)))
+    if len(pieces) < 12:
+        return True
+    pieces.sort()
+    lines: list[list[tuple[int, int]]] = [[pieces[0]]]
+    for top, bottom in pieces[1:]:
+        if abs(top - lines[-1][0][0]) <= 8:
+            lines[-1].append((top, bottom))
+        else:
+            lines.append([(top, bottom)])
+    down = 0
+    up = 0
+    for line in lines:
+        if len(line) < 4:
+            continue
+        tops = [item[0] for item in line]
+        bottoms = [item[1] for item in line]
+        if float(np.std(bottoms)) <= float(np.std(tops)):
+            down += 1
+        else:
+            up += 1
+    return down >= up
+
+
 def make_upright(image: np.ndarray) -> np.ndarray:
     """Rotate a straightened page so the text lines run left to right."""
-    if not _text_is_sideways(image):
-        return image
-    turned = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
-    if _text_is_sideways(turned):
-        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    return turned
+    page = image
+    if _text_is_sideways(page):
+        clockwise = cv2.rotate(page, cv2.ROTATE_90_CLOCKWISE)
+        counter = cv2.rotate(page, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        page = clockwise if not _text_is_sideways(clockwise) else counter
+    if not _baseline_is_down(page):
+        page = cv2.rotate(page, cv2.ROTATE_180)
+    return page
 
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
