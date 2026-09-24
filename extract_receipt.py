@@ -246,22 +246,14 @@ def locate_page_corners(image_path: Path, api_key: str | None = None) -> PageCor
         "If the photo is already a flat scan with no background around the page, set found to false."
     )
     image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[image_part, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=PageCorners,
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            if response.text:
-                return PageCorners.model_validate_json(response.text)
-        except Exception:
-            continue
+    try:
+        response = _generate(client, [image_part, prompt], PageCorners)
+    except RuntimeError:
+        return None
+    if response.parsed is not None:
+        return response.parsed
+    if response.text:
+        return PageCorners.model_validate_json(response.text)
     return None
 
 
