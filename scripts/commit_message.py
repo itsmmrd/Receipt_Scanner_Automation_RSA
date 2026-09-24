@@ -181,6 +181,8 @@ def short_summary(files: list[str], added: list[str]) -> str:
     title = title_for_files(files, added)
     if not title.startswith("Update "):
         return title
+    if "receipt_pdf.py" in names or "Download PDF" in "\n".join(added):
+        return "Save original photos and download them in a PDF"
     if names & {"scan_document.py", "document_segment.py"}:
         return "Straighten the receipt photo to the page frame"
     if names & {"google_services.py"}:
