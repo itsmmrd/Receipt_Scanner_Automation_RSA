@@ -131,7 +131,7 @@ def _valid_quad(quad: np.ndarray, width: int, height: int) -> bool:
     aspect = max(w, h) / min(w, h)
     if aspect > 10:
         return False
-    return aspect >= 1.15
+    return aspect >= 1.02
 
 
 def _score_quad(quad: np.ndarray, width: int, height: int) -> float:
