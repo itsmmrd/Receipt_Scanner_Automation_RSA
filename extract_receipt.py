@@ -193,7 +193,7 @@ def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo
     if mime is None:
         raise ValueError(f"Unsupported image type: {image_path.suffix}")
 
-    client = genai.Client(api_key=api_key or get_api_key())
+    client = _client_for(api_key)
     prompt = (
         "Read this receipt photo and extract the purchase details. "
         "Use the printed total, do not add line items yourself. "
