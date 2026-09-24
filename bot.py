@@ -465,8 +465,7 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text("Send the receipt photo to attach.")
         return MANUAL_ATTACH
     if action in {"save_result", "save_original"}:
-        use_original = action == "save_original"
-        await save_current(update, context, use_original=use_original, photo_required=True)
+        await save_current(update, context, use_original=True, photo_required=True)
         return ConversationHandler.END
     return REVIEW
 
