@@ -722,11 +722,7 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
         if output_path.resolve() != image_path.resolve():
             shutil.copyfile(image_path, output_path)
         return output_path
-    if used_ai_corners:
-        warped = warp_ordered(image, quad)
-    else:
-        warped = four_point_transform(image, quad * ratio)
-        warped = make_upright(warped)
+    warped = four_point_transform(image, quad * ratio)
     if not _usable_page(warped):
         warped = image.copy()
     scanned = enhance_high_contrast(warped) if high_contrast else enhance_readable(warped)
