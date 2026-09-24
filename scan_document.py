@@ -649,10 +649,12 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
     height, width = image.shape[:2]
     ratio = 1.0
     quad = None
+    used_ai_corners = False
     try:
         from extract_receipt import locate_page_corners
 
         quad = quad_from_page_corners(locate_page_corners(image_path), width, height)
+        used_ai_corners = quad is not None
     except Exception:
         quad = None
     if quad is None:
