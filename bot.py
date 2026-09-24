@@ -769,6 +769,24 @@ async def sheet_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @require_google
+async def download_pdf_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Building the PDF...")
+    try:
+        path = await asyncio.to_thread(build_receipts_pdf, query.from_user.id)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("PDF export failed")
+        await query.message.reply_text(f"Could not build the PDF: {exc}")
+        return
+    with path.open("rb") as handle:
+        await query.message.reply_document(
+            document=InputFile(handle, filename="receipts.pdf"),
+            caption="The table is first. Each photo follows, labeled with its receipt number.",
+        )
+
+
+@require_google
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
