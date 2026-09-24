@@ -61,10 +61,20 @@ def segment_document_quad(image: np.ndarray) -> np.ndarray | None:
         return None
     contour = max(contours, key=cv2.contourArea)
     area = cv2.contourArea(contour)
-    if area < INPUT_SIZE * INPUT_SIZE * 0.05:
+    frame = float(INPUT_SIZE * INPUT_SIZE)
+    if area < frame * 0.05 or area > frame * 0.9:
         return None
-    rect = cv2.minAreaRect(contour)
-    box = cv2.boxPoints(rect).astype(np.float32)
-    box[:, 0] *= width / INPUT_SIZE
-    box[:, 1] *= height / INPUT_SIZE
+    peri = cv2.arcLength(contour, True)
+    box = None
+    for factor in (0.01, 0.02, 0.04):
+        approx = cv2.approxPolyDP(contour, factor * peri, True)
+        if len(approx) == 4:
+            box = approx.reshape(4, 2).astype(np.float32)
+            break
+    if box is None:
+        box = cv2.boxPoints(cv2.minAreaRect(contour)).astype(np.float32)
+    center = box.mean(axis=0)
+    box = center + (box - center) * 1.04
+    box[:, 0] = np.clip(box[:, 0] * width / INPUT_SIZE, 0, width - 1)
+    box[:, 1] = np.clip(box[:, 1] * height / INPUT_SIZE, 0, height - 1)
     return box
