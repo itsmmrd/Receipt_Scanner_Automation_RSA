@@ -340,8 +340,8 @@ def _upscale_page(image: np.ndarray, target_width: int = 900) -> np.ndarray:
 
 
 def enhance_readable(warped: np.ndarray) -> np.ndarray:
-    """Keep the cropped photo; do not threshold or crush gray text."""
-    return _upscale_page(warped, target_width=700)
+    """Keep the scan at its real size. Upscaling only softens text."""
+    return warped
 
 
 def enhance_high_contrast(warped: np.ndarray) -> np.ndarray:
