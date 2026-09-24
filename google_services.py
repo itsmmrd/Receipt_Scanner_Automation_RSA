@@ -414,6 +414,29 @@ def _drive_image_files(drive, folder_id: str, name: str) -> list[dict[str, Any]]
     return images
 
 
+def download_receipt_image(telegram_id: int, name: str, dest: Path) -> Path | None:
+    """Save the Drive photo for a receipt number. None when that row has no image."""
+    record = load_user(telegram_id)
+    if not record.get("folder_id"):
+        return None
+    creds = credentials_from_record(record)
+    if creds is None:
+        return None
+    drive = _google_service("drive", "v3", creds)
+    files = _drive_image_files(drive, record["folder_id"], name)
+    images = [item for item in files if (item.get("mimeType") or "").startswith("image/")]
+    if not images:
+        return None
+    request = drive.files().get_media(fileId=images[0]["id"])
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as handle:
+        downloader = MediaIoBaseDownload(handle, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+    return dest
+
+
 def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
     """Upload or replace the Drive photo for an existing sheet row."""
     record = ensure_google_workspace(telegram_id)
