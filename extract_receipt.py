@@ -311,37 +311,26 @@ def normalize_edit_field(field: str, raw: str, api_key: str | None = None) -> st
         "Return JSON with a single 'value' field.\n\n"
         f"User input: {cleaned}"
     )
-    last_error: Exception | None = None
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=NormalizedField,
-                ),
-            )
-            parsed = response.parsed
-            if parsed is None and response.text:
-                parsed = NormalizedField.model_validate_json(response.text)
-            if parsed is None or parsed.value is None:
-                raise ValueError(f"Could not normalize {field}.")
-            if field == "amount":
-                amount = _parse_amount_local(parsed.value)
-                if amount is None:
-                    raise ValueError(f"Could not normalize amount: {parsed.value}")
+    try:
+        response = _generate(client, [prompt], NormalizedField)
+    except RuntimeError:
+        response = None
+    parsed = None if response is None else response.parsed
+    if parsed is None and response is not None and response.text:
+        parsed = NormalizedField.model_validate_json(response.text)
+    if parsed is not None and parsed.value is not None:
+        if field == "amount":
+            amount = _parse_amount_local(parsed.value)
+            if amount is not None:
                 return amount
+        else:
             return parsed.value.strip()
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
 
     if field == "amount":
         local = _parse_amount_local(cleaned)
         if local is not None:
             return local
-    raise RuntimeError(f"Gemini could not normalize {field}: {last_error}")
+    raise RuntimeError(f"Gemini could not normalize {field}.")
 
 
 def save_receipt(info: ReceiptInfo, image_path: Path) -> Path:
