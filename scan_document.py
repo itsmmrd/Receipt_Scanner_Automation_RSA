@@ -650,6 +650,8 @@ def scan_image(image_path: Path, high_contrast: bool = False, output_path: Path 
         ratio = image.shape[0] / RESCALED_HEIGHT
         rescaled = resize_to_height(image, int(RESCALED_HEIGHT))
         quad = find_document_quad(rescaled)
+    else:
+        rescaled = image
     quad_area = cv2.contourArea(quad.astype(np.float32))
     frame_area = float(rescaled.shape[0] * rescaled.shape[1])
     if output_path is None:
