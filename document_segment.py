@@ -45,7 +45,8 @@ def segment_document_quad(image: np.ndarray) -> np.ndarray | None:
     """Return four page corners in the original image, or None."""
     height, width = image.shape[:2]
     interpreter = _get_interpreter()
-    resized = cv2.resize(image, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2.INTER_AREA)
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    resized = cv2.resize(rgb, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2.INTER_AREA)
     tensor = resized.astype(np.float32)
     tensor = (tensor - 127.5) / 127.5
     tensor = tensor[None, ...]
