@@ -343,7 +343,7 @@ def _baseline_score(image: np.ndarray) -> int:
             continue
         pieces.append((int(y), int(y + h)))
     if len(pieces) < 12:
-        return True
+        return 0
     pieces.sort()
     lines: list[list[tuple[int, int]]] = [[pieces[0]]]
     for top, bottom in pieces[1:]:
