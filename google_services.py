@@ -246,6 +246,8 @@ def _services(record: dict[str, Any]):
 
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
     record = load_user(telegram_id)
+    if record.get("folder_id") and record.get("spreadsheet_id") and record.get("sheet_ready"):
+        return record
     drive, sheets = _services(record)
     if not record.get("folder_id"):
         created = (
