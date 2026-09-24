@@ -132,6 +132,13 @@ def _hunks(diff: str) -> list[tuple[str, str, list[str]]]:
     return hunks
 
 
+def _clean_line(line: str) -> str:
+    text = line.strip().lstrip("-").strip().strip("`")
+    if text.startswith(("```", "---", "|", "#")):
+        return ""
+    return text
+
+
 def _bullet(file_name: str, func: str, added: list[str]) -> str:
     name = Path(file_name).name
     defs = [
@@ -141,14 +148,14 @@ def _bullet(file_name: str, func: str, added: list[str]) -> str:
     ]
     if defs:
         return f"{name}: {', '.join(defs[:3])}"
-    comment = next(
-        (line.strip("\"' ") for line in added if line.startswith(("#", '"""', "'''"))),
-        "",
-    )
-    if comment:
-        return f"{name}: {comment[:160]}"
-    where = f" in {func}" if func else ""
-    return f"{name}{where}: {added[0][:160]}"
+    for line in added:
+        cleaned = _clean_line(line)
+        if len(cleaned) >= 24:
+            return f"{name}: {cleaned[:140]}"
+    context = func if func.startswith(("def ", "class ", "async def ")) else ""
+    where = f" in {context}" if context else ""
+    snippet = _clean_line(added[0]) or added[0].strip()
+    return f"{name}{where}: {snippet[:140]}"
 
 
 def change_details() -> list[str]:
