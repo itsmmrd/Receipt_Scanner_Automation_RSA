@@ -363,24 +363,22 @@ def _baseline_score(image: np.ndarray) -> int:
             down += 1
         else:
             up += 1
-    return down >= up
+    return down - up
 
 
 def make_upright(image: np.ndarray) -> np.ndarray:
     """Rotate a straightened page so the text lines run left to right."""
-    if not _text_is_sideways(image):
-        page = image
-    else:
+    if _text_is_sideways(image):
         options = (
             cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
             cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE),
         )
-        upright = [item for item in options if not _text_is_sideways(item)]
-        page = upright[0] if upright else options[0]
-        if len(upright) == 2:
-            page = upright[0] if _baseline_is_down(upright[0]) else upright[1]
-    if not _baseline_is_down(page):
-        page = cv2.rotate(page, cv2.ROTATE_180)
+        page = max(options, key=_baseline_score)
+    else:
+        page = image
+    flipped = cv2.rotate(page, cv2.ROTATE_180)
+    if _baseline_score(flipped) > _baseline_score(page) + 3:
+        return flipped
     return page
 
 
