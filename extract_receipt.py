@@ -180,6 +180,62 @@ def extract_receipt_from_text(text: str, api_key: str | None = None) -> ReceiptI
     raise RuntimeError(f"Gemini could not parse receipt text: {last_error}")
 
 
+class PageCorners(BaseModel):
+    found: bool = Field(
+        description=(
+            "True when a paper page is visible inside the photo and its edges "
+            "can be marked. False when the photo is already just the page."
+        ),
+    )
+    top_left_x: int = Field(description="0 to 1000, across the image width.")
+    top_left_y: int = Field(description="0 to 1000, down the image height.")
+    top_right_x: int = Field(description="0 to 1000, across the image width.")
+    top_right_y: int = Field(description="0 to 1000, down the image height.")
+    bottom_right_x: int = Field(description="0 to 1000, across the image width.")
+    bottom_right_y: int = Field(description="0 to 1000, down the image height.")
+    bottom_left_x: int = Field(description="0 to 1000, across the image width.")
+    bottom_left_y: int = Field(description="0 to 1000, down the image height.")
+
+
+def locate_page_corners(image_path: Path, api_key: str | None = None) -> PageCorners | None:
+    """Ask Gemini for the paper's four corners. None if the call fails."""
+    if not image_path.is_file():
+        return None
+    mime = MIME_TYPES.get(image_path.suffix.lower())
+    if mime is None:
+        return None
+    try:
+        client = genai.Client(api_key=api_key or get_api_key())
+    except RuntimeError:
+        return None
+    prompt = (
+        "Find the four corners of the physical paper page in this photo. "
+        "Coordinates are integers from 0 to 1000: x goes left to right, y goes top to bottom. "
+        "Order is the page's own top-left, top-right, bottom-right, bottom-left, "
+        "even if the page is rotated or tilted. "
+        "Mark the paper edges, not a table or a block of text inside the page. "
+        "If the photo is already a flat scan with no background around the page, set found to false."
+    )
+    image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
+    for model in MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=[image_part, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=PageCorners,
+                ),
+            )
+            if response.parsed is not None:
+                return response.parsed
+            if response.text:
+                return PageCorners.model_validate_json(response.text)
+        except Exception:
+            continue
+    return None
+
+
 class NormalizedField(BaseModel):
     value: str | None = Field(
         default=None,
