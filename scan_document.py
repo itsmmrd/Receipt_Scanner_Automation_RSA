@@ -358,7 +358,8 @@ def _baseline_is_down(image: np.ndarray) -> bool:
             continue
         tops = [item[0] for item in line]
         bottoms = [item[1] for item in line]
-        if float(np.std(bottoms)) <= float(np.std(tops)):
+        # Letter tops line up more tightly than baselines once table rules are removed.
+        if float(np.std(tops)) <= float(np.std(bottoms)):
             down += 1
         else:
             up += 1
