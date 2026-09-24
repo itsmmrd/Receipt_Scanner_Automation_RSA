@@ -27,11 +27,13 @@ DEFAULT_IMAGE = ROOT / "output" / "sample.jpeg"
 OUTPUT_DIR = ROOT / "output"
 
 MODELS = (
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3.1-flash-lite-preview",
     "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-pro",
 )
+_preferred_model: str | None = None
+_client: genai.Client | None = None
 
 MIME_TYPES = {
     ".jpg": "image/jpeg",
