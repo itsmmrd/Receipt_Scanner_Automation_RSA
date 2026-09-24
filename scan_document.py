@@ -458,6 +458,9 @@ def detect_contrasting_page(image: np.ndarray) -> np.ndarray | None:
 
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
+    contrasting = detect_contrasting_page(image)
+    if contrasting is not None:
+        return contrasting
     sheet = detect_sheet_corners(image)
     if sheet is not None:
         return sheet
