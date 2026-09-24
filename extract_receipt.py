@@ -105,6 +105,60 @@ def get_api_key() -> str:
     return key
 
 
+def _is_quota(exc: Exception) -> bool:
+    text = str(exc)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text
+
+
+def _is_daily_quota(exc: Exception) -> bool:
+    return "PerDay" in str(exc)
+
+
+def _retry_delay(exc: Exception) -> float | None:
+    match = re.search(r"retry in ([0-9.]+)s", str(exc), re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _generate(client: genai.Client, contents: list, schema: type[BaseModel]):
+    """Try each model. A used-up daily quota skips that model; a short rate limit waits once."""
+    quota_models: list[str] = []
+    last_error: Exception | None = None
+    for model in MODELS:
+        for attempt in range(2):
+            try:
+                return client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=schema,
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                delay = _retry_delay(exc)
+                if (
+                    attempt == 0
+                    and _is_quota(exc)
+                    and not _is_daily_quota(exc)
+                    and delay is not None
+                    and delay <= 60
+                ):
+                    time.sleep(delay + 0.5)
+                    continue
+                if _is_quota(exc):
+                    quota_models.append(model)
+                break
+    if quota_models and (last_error is None or _is_quota(last_error)):
+        raise RuntimeError(
+            "Gemini free quota is used up for today. "
+            "Try again after midnight Pacific time, or enable billing on the API key."
+        )
+    raise RuntimeError(f"Gemini request failed: {last_error}")
+
+
 def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo:
     if not image_path.is_file():
         raise FileNotFoundError(f"Image not found: {image_path}")
