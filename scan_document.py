@@ -429,6 +429,33 @@ def make_upright(image: np.ndarray) -> np.ndarray:
     return page
 
 
+def detect_contrasting_page(image: np.ndarray) -> np.ndarray | None:
+    """Find a light page on a darker background and return its four corners.
+
+    This is the usual document-scanner path: blur, edges, largest four-corner outline.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 1)
+    edges = cv2.Canny(blurred, 75, 200)
+    kernel = np.ones((5, 5), np.uint8)
+    edges = cv2.dilate(edges, kernel, iterations=2)
+    edges = cv2.erode(edges, kernel, iterations=1)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    height, width = image.shape[:2]
+    image_area = float(width * height)
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:8]:
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        if len(approx) != 4:
+            continue
+        quad = approx.reshape(4, 2).astype(np.float32)
+        area = cv2.contourArea(quad)
+        if area < image_area * 0.12 or area > image_area * 0.98:
+            continue
+        return order_points(quad)
+    return None
+
+
 def find_document_quad(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
     sheet = detect_sheet_corners(image)
