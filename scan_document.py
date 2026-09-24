@@ -727,6 +727,16 @@ def document_scanner_quad(image: np.ndarray) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
     closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
     edged = cv2.Canny(closed, 0, 84)
+    corner_quads = []
+    for group in itertools.combinations(_scanner_corners(edged), 4):
+        quad = order_points(np.array(group, dtype=np.float32))
+        area = cv2.contourArea(quad)
+        if area < frame * 0.25 or _quad_angle_range(quad) > 40:
+            continue
+        corner_quads.append((area, quad))
+    if corner_quads:
+        corner_quads.sort(key=lambda item: _quad_angle_range(item[1]))
+        return corner_quads[0][1]
     contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     epsilon = 80.0 * (height / 500.0)
     best = None
