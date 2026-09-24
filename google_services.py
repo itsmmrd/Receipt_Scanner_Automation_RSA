@@ -322,7 +322,16 @@ def allocate_receipt_name(telegram_id: int, date_text: str | None = None) -> str
 def upload_receipt_file(telegram_id: int, path: Path, name: str) -> str:
     record = ensure_google_workspace(telegram_id)
     drive, _sheets = _services(record)
-    media = MediaFileUpload(str(path), mimetype="image/jpeg", resumable=True)
+    mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+    }.get(path.suffix.lower(), "image/jpeg")
+    media = MediaFileUpload(str(path), mimetype=mime, resumable=True)
     uploaded = (
         drive.files()
         .create(
