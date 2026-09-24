@@ -335,7 +335,13 @@ def detect_sheet_corners(image: np.ndarray) -> np.ndarray | None:
         if area > best_area:
             best_area = area
             best = order_points(quad)
-    return best
+    if best is None:
+        return None
+    center = best.mean(axis=0)
+    expanded = center + (best - center) * 1.03
+    expanded[:, 0] = np.clip(expanded[:, 0], 0, width - 1)
+    expanded[:, 1] = np.clip(expanded[:, 1], 0, height - 1)
+    return expanded.astype(np.float32)
 
 
 def detect_document_frame(image: np.ndarray) -> np.ndarray | None:
