@@ -297,6 +297,47 @@ def _paper_mask(image: np.ndarray) -> np.ndarray:
     return closed
 
 
+def detect_sheet_corners(image: np.ndarray) -> np.ndarray | None:
+    """Find a paper sheet's four corners.
+
+    Same pipeline as the working OpenCV answer on
+    https://stackoverflow.com/questions/6555629 : blur, dilate, Canny,
+    draw Hough lines back onto the edges, then take the largest 4-corner contour.
+    """
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+    dilated = cv2.dilate(gray, kernel)
+    edges = cv2.Canny(dilated, 0, 84, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 25, minLineLength=40, maxLineGap=20)
+    if lines is not None:
+        for x1, y1, x2, y2 in lines[:, 0]:
+            cv2.line(edges, (int(x1), int(y1)), (int(x2), int(y2)), 255, 2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best = None
+    best_area = 0.0
+    min_area = float(width * height) * 0.08
+    for contour in contours:
+        if cv2.arcLength(contour, False) < 100:
+            continue
+        area = cv2.contourArea(contour)
+        if area < min_area or area > float(width * height) * 0.98:
+            continue
+        approx = cv2.approxPolyDP(contour, 0.02 * cv2.arcLength(contour, True), True)
+        if len(approx) != 4:
+            rect = cv2.minAreaRect(contour)
+            quad = cv2.boxPoints(rect).astype(np.float32)
+        else:
+            quad = approx.reshape(4, 2).astype(np.float32)
+        if not _valid_quad(quad, width, height):
+            continue
+        if area > best_area:
+            best_area = area
+            best = order_points(quad)
+    return best
+
+
 def detect_document_frame(image: np.ndarray) -> np.ndarray | None:
     """Find the page corners the way a scanner does, even when the page is tilted."""
     height, width = image.shape[:2]
