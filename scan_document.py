@@ -330,8 +330,8 @@ def _text_is_sideways(image: np.ndarray) -> bool:
     return float(np.mean(np.abs(vertical))) > float(np.mean(np.abs(horizontal))) * 1.2
 
 
-def _baseline_is_down(image: np.ndarray) -> bool:
-    """Upright text shares a flat baseline. Upside-down text shares a flat top."""
+def _baseline_score(image: np.ndarray) -> int:
+    """Higher when letter tops line up, which is true for upright text."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     small = resize_to_height(gray, 700) if gray.shape[0] > 700 else gray
     _, ink = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
