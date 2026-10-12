@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 
 from config import SHEET_TITLE, TMP_DIR
-from google_services import download_receipt_image, download_spreadsheet_xlsx, list_records
+from google_services import download_receipt_image, download_spreadsheet_xlsx, list_all_records
 
 
 def _cell(row: list[str], index: int) -> str:

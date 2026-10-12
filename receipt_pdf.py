@@ -12,7 +12,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from config import TMP_DIR
-from google_services import download_receipt_image, list_records
+from google_services import download_receipt_image, list_all_records
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 14 * mm
