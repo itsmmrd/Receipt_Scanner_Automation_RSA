@@ -367,7 +367,7 @@ def append_sheet_row(
     _drive, sheets = _services(record)
     sheets.spreadsheets().values().append(
         spreadsheetId=record["spreadsheet_id"],
-        range="A:H",
+        range="A:I",
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
         body={
@@ -381,13 +381,24 @@ def append_sheet_row(
                     merchant or "",
                     file_link,
                     _sheet_created_formula(),
+                    "",
                 ]
             ]
         },
     ).execute()
 
 
-def list_records(telegram_id: int) -> list[list[str]]:
+def _record_status(row: list[str]) -> str:
+    if len(row) <= SHEET_STATUS_INDEX:
+        return ""
+    return str(row[SHEET_STATUS_INDEX] or "").strip()
+
+
+def is_paid_record(row: list[str]) -> bool:
+    return _record_status(row).lower() == STATUS_PAID.lower()
+
+
+def _fetch_sheet_rows(telegram_id: int) -> list[list[str]]:
     record = load_user(telegram_id)
     if not record.get("spreadsheet_id"):
         record = ensure_google_workspace(telegram_id)
@@ -398,10 +409,53 @@ def list_records(telegram_id: int) -> list[list[str]]:
     result = (
         sheets.spreadsheets()
         .values()
-        .get(spreadsheetId=record["spreadsheet_id"], range="A2:H")
+        .get(spreadsheetId=record["spreadsheet_id"], range="A2:I")
         .execute()
     )
     return result.get("values") or []
+
+
+def list_all_records(telegram_id: int) -> list[list[str]]:
+    return _fetch_sheet_rows(telegram_id)
+
+
+def list_records(telegram_id: int, *, active_only: bool = True) -> list[list[str]]:
+    rows = _fetch_sheet_rows(telegram_id)
+    if not active_only:
+        return rows
+    return [row for row in rows if not is_paid_record(row)]
+
+
+def _sheet_row_index_for_name(telegram_id: int, name: str) -> int | None:
+    for offset, row in enumerate(list_all_records(telegram_id), start=2):
+        if row and row[0] == name:
+            return offset
+    return None
+
+
+def set_record_status(telegram_id: int, name: str, status: str) -> bool:
+    record = ensure_google_workspace(telegram_id)
+    row_index = _sheet_row_index_for_name(telegram_id, name)
+    if row_index is None:
+        return False
+    _drive, sheets = _services(record)
+    sheets.spreadsheets().values().update(
+        spreadsheetId=record["spreadsheet_id"],
+        range=f"I{row_index}",
+        valueInputOption="RAW",
+        body={"values": [[status]]},
+    ).execute()
+    return True
+
+
+def mark_all_active_paid(telegram_id: int) -> int:
+    active = list_records(telegram_id, active_only=True)
+    count = 0
+    for row in active:
+        name = row[0] if row else ""
+        if name and set_record_status(telegram_id, name, STATUS_PAID):
+            count += 1
+    return count
 
 
 def download_spreadsheet_xlsx(telegram_id: int, dest: Path) -> Path:
