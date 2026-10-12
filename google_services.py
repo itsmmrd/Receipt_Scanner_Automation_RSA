@@ -271,8 +271,6 @@ def _sync_sheet_headers(record: dict[str, Any], sheets) -> None:
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
     record = load_user(telegram_id)
     if record.get("folder_id") and record.get("spreadsheet_id") and record.get("sheet_ready"):
-        _drive, sheets = _services(record)
-        _sync_sheet_headers(record, sheets)
         return record
     drive, sheets = _services(record)
     if not record.get("folder_id"):
