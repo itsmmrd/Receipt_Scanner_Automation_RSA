@@ -37,7 +37,11 @@ SHEET_HEADERS = [
     "Merchant",
     "File link",
     "Created",
+    "Status",
 ]
+
+STATUS_PAID = "Paid"
+SHEET_STATUS_INDEX = 8
 
 # Google Sheets custom display formats (real date values, not plain text).
 SHEET_DATE_FORMAT = {"type": "DATE", "pattern": "dd.mm.yyyy"}
