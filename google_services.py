@@ -443,14 +443,30 @@ def _sheet_row_index_for_name(telegram_id: int, name: str) -> int | None:
     return _sheet_row_index_from_rows(list_all_records(telegram_id), name)
 
 
+def _apply_status_on_row(row: list[str], status: str) -> None:
+    while len(row) <= SHEET_STATUS_INDEX:
+        row.append("")
+    row[SHEET_STATUS_INDEX] = status
+
+
 def set_record_status(telegram_id: int, name: str, status: str) -> bool:
+    return mark_record_paid(telegram_id, name, status=status) is not None
+
+
+def mark_record_paid(
+    telegram_id: int,
+    name: str,
+    *,
+    status: str = STATUS_PAID,
+) -> list[list[str]] | None:
+    """Update one row's status. Returns remaining active rows without refetching the sheet."""
     record = load_user(telegram_id)
     if not record.get("spreadsheet_id"):
         record = ensure_google_workspace(telegram_id)
     rows = list_all_records(telegram_id)
     row_index = _sheet_row_index_from_rows(rows, name)
     if row_index is None:
-        return False
+        return None
     _drive, sheets = _services(record)
     sheets.spreadsheets().values().update(
         spreadsheetId=record["spreadsheet_id"],
@@ -458,7 +474,11 @@ def set_record_status(telegram_id: int, name: str, status: str) -> bool:
         valueInputOption="RAW",
         body={"values": [[status]]},
     ).execute()
-    return True
+    for row in rows:
+        if row and row[0] == name:
+            _apply_status_on_row(row, status)
+            break
+    return [row for row in rows if not is_paid_record(row)]
 
 
 def mark_all_active_paid(telegram_id: int) -> int:
