@@ -400,6 +400,31 @@ def list_records(telegram_id: int) -> list[list[str]]:
     return result.get("values") or []
 
 
+def download_spreadsheet_xlsx(telegram_id: int, dest: Path) -> Path:
+    """Export the user's RSA Google Sheet as an Excel workbook."""
+    record = load_user(telegram_id)
+    if not record.get("spreadsheet_id"):
+        record = ensure_google_workspace(telegram_id)
+    spreadsheet_id = record.get("spreadsheet_id")
+    if not spreadsheet_id:
+        raise RuntimeError("No spreadsheet yet.")
+    creds = credentials_from_record(record)
+    if creds is None:
+        raise RuntimeError("Google account is not connected.")
+    drive = _google_service("drive", "v3", creds)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = drive.files().export_media(
+        fileId=spreadsheet_id,
+        mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    with dest.open("wb") as handle:
+        downloader = MediaIoBaseDownload(handle, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+    return dest
+
+
 def _drive_image_files(drive, folder_id: str, name: str) -> list[dict[str, Any]]:
     query = (
         f"name contains '{name}' and '{folder_id}' in parents "

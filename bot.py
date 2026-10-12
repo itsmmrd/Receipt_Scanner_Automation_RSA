@@ -55,6 +55,7 @@ from receipt_format import (
     format_display_date,
 )
 from receipt_pdf import build_receipts_pdf
+from receipt_zip import build_receipts_zip
 from scan_document import ensure_telegram_photo_file
 from storage import is_google_connected, load_user
 
