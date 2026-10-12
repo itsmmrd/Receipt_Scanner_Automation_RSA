@@ -786,7 +786,10 @@ async def show_remove_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     rows = await asyncio.to_thread(list_records, update.effective_user.id)
     if not rows:
-        await target.reply_text("There are no records yet.", reply_markup=main_menu_keyboard())
+        await target.reply_text(
+            "No active receipts to remove.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
     record = load_user(update.effective_user.id)
     await target.reply_text(
