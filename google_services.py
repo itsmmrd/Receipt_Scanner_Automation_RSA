@@ -410,6 +410,11 @@ def _fetch_sheet_rows(telegram_id: int) -> list[list[str]]:
     record = load_user(telegram_id)
     if not record.get("spreadsheet_id"):
         record = ensure_google_workspace(telegram_id)
+    elif record.get("spreadsheet_id"):
+        creds = credentials_from_record(record)
+        if creds is not None:
+            sheets = _google_service("sheets", "v4", creds)
+            _sync_sheet_headers(record, sheets)
     creds = credentials_from_record(record)
     if creds is None:
         raise RuntimeError("Google account is not connected.")
