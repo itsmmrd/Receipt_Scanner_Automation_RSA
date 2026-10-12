@@ -133,7 +133,7 @@ def render_receipts_pdf(
 
 
 def build_receipts_pdf(telegram_id: int) -> Path:
-    rows = list_records(telegram_id)
+    rows = list_all_records(telegram_id)
     if not rows:
         raise ValueError("There are no records yet.")
     folder = TMP_DIR / str(telegram_id) / "pdf"
