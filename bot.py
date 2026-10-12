@@ -777,7 +777,10 @@ async def sheet_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton("Open Sheet", url=sheet_url)],
-                [InlineKeyboardButton("Download PDF", callback_data="download_pdf")],
+                [
+                    InlineKeyboardButton("Download PDF", callback_data="download_pdf"),
+                    InlineKeyboardButton("Download ZIP", callback_data="download_zip"),
+                ],
             ]
         ),
     )
