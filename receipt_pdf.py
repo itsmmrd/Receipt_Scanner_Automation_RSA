@@ -88,6 +88,7 @@ def render_receipts_pdf(
                 _cell(row, 3),
                 _cell(row, 4),
                 _cell(row, 5),
+                _cell(row, 8),
             ]
         )
     table = Table(table_data, repeatRows=1)
