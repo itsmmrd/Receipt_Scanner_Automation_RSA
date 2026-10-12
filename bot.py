@@ -805,6 +805,24 @@ async def download_pdf_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 @require_google
+async def download_zip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Building the ZIP (Excel + photos)...")
+    try:
+        path = await asyncio.to_thread(build_receipts_zip, query.from_user.id)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("ZIP export failed")
+        await query.message.reply_text(f"Could not build the ZIP: {exc}")
+        return
+    with path.open("rb") as handle:
+        await query.message.reply_document(
+            document=InputFile(handle, filename="receipts.zip"),
+            caption="Contains RSA Receipts.xlsx and a photos/ folder with each saved receipt image.",
+        )
+
+
+@require_google
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
