@@ -190,12 +190,18 @@ def records_keyboard(
             if file_link:
                 row_buttons.append(InlineKeyboardButton(f"📁 #{name}", url=file_link))
             row_buttons.append(
+                InlineKeyboardButton(f"✅ #{name}", callback_data=f"pay:{name}")
+            )
+            row_buttons.append(
                 InlineKeyboardButton(f"🗑 #{name}", callback_data=f"del:{name}")
             )
             buttons.append(row_buttons)
     if sheet_url:
         buttons.append([InlineKeyboardButton("Open Sheet", url=sheet_url)])
     if not delete_only and rows:
+        buttons.append(
+            [InlineKeyboardButton("✅ Mark all as paid", callback_data="pay_all")]
+        )
         buttons.append([InlineKeyboardButton("Download PDF", callback_data="download_pdf")])
         buttons.append([InlineKeyboardButton("Download ZIP", callback_data="download_zip")])
     return InlineKeyboardMarkup(buttons)

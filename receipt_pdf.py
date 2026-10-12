@@ -16,7 +16,7 @@ from google_services import download_receipt_image, list_all_records
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 14 * mm
-TABLE_HEADERS = ["#", "Date", "Category", "Amount", "Currency", "Merchant"]
+TABLE_HEADERS = ["#", "Date", "Category", "Amount", "Currency", "Merchant", "Status"]
 
 
 def _cell(row: list[str], index: int) -> str:
