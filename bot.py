@@ -726,25 +726,49 @@ async def delete_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return ConversationHandler.END
 
 
-async def show_records_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    target = update.effective_message
-    if target is None or update.effective_user is None:
-        return
-    rows = await asyncio.to_thread(list_records, update.effective_user.id)
-    if not rows:
-        await target.reply_text("There are no records yet.", reply_markup=main_menu_keyboard())
-        return
-    record = load_user(update.effective_user.id)
-    sheet_url = record.get("spreadsheet_url")
-    preview = "\n".join(
+def _active_list_preview(rows: list[list[str]]) -> str:
+    return "\n".join(
         f"#{row[0]} · {row[1] if len(row) > 1 else ''} · "
         f"{row[2] if len(row) > 2 else ''} · {row[3] if len(row) > 3 else ''}"
         for row in rows[-10:]
     )
-    await target.reply_text(
-        f"Recent receipts:\n{preview}",
-        reply_markup=records_keyboard(rows, sheet_url),
-    )
+
+
+async def _send_active_list_message(
+    message,
+    telegram_id: int,
+    *,
+    edit: bool = False,
+) -> None:
+    rows = await asyncio.to_thread(list_records, telegram_id)
+    record = load_user(telegram_id)
+    sheet_url = record.get("spreadsheet_url")
+    if not rows:
+        text = (
+            "No active receipts.\n"
+            "Paid items stay in your Google Sheet with Status = Paid."
+        )
+        markup = main_menu_keyboard()
+        if edit:
+            await message.edit_text(text, reply_markup=None)
+            await message.reply_text("Main menu:", reply_markup=markup)
+        else:
+            await message.reply_text(text, reply_markup=markup)
+        return
+    preview = _active_list_preview(rows)
+    markup = records_keyboard(rows, sheet_url)
+    text = f"Active receipts (unpaid):\n{preview}"
+    if edit:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.reply_text(text, reply_markup=markup)
+
+
+async def show_records_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    target = update.effective_message
+    if target is None or update.effective_user is None:
+        return
+    await _send_active_list_message(target, update.effective_user.id)
 
 
 async def show_remove_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
