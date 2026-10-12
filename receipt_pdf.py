@@ -12,11 +12,11 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from config import TMP_DIR
-from google_services import download_receipt_image, list_records
+from google_services import download_receipt_image, list_all_records
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 14 * mm
-TABLE_HEADERS = ["#", "Date", "Category", "Amount", "Currency", "Merchant"]
+TABLE_HEADERS = ["#", "Date", "Category", "Amount", "Currency", "Merchant", "Status"]
 
 
 def _cell(row: list[str], index: int) -> str:
@@ -88,6 +88,7 @@ def render_receipts_pdf(
                 _cell(row, 3),
                 _cell(row, 4),
                 _cell(row, 5),
+                _cell(row, 8),
             ]
         )
     table = Table(table_data, repeatRows=1)
@@ -132,7 +133,7 @@ def render_receipts_pdf(
 
 
 def build_receipts_pdf(telegram_id: int) -> Path:
-    rows = list_records(telegram_id)
+    rows = list_all_records(telegram_id)
     if not rows:
         raise ValueError("There are no records yet.")
     folder = TMP_DIR / str(telegram_id) / "pdf"

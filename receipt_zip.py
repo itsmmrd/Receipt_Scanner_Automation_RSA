@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 
 from config import SHEET_TITLE, TMP_DIR
-from google_services import download_receipt_image, download_spreadsheet_xlsx, list_records
+from google_services import download_receipt_image, download_spreadsheet_xlsx, list_all_records
 
 
 def _cell(row: list[str], index: int) -> str:
@@ -16,7 +16,7 @@ def _cell(row: list[str], index: int) -> str:
 
 
 def build_receipts_zip(telegram_id: int) -> Path:
-    rows = list_records(telegram_id)
+    rows = list_all_records(telegram_id)
     if not rows:
         raise ValueError("There are no records yet.")
     folder = TMP_DIR / str(telegram_id) / "zip"

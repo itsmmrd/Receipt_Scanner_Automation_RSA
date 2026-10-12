@@ -44,6 +44,9 @@ from google_services import (
     delete_record,
     finish_oauth,
     list_records,
+    mark_all_active_paid,
+    set_record_status,
+    STATUS_PAID,
     next_receipt_name,
     public_base_url,
     redirect_uri,
@@ -187,12 +190,18 @@ def records_keyboard(
             if file_link:
                 row_buttons.append(InlineKeyboardButton(f"📁 #{name}", url=file_link))
             row_buttons.append(
+                InlineKeyboardButton(f"✅ #{name}", callback_data=f"pay:{name}")
+            )
+            row_buttons.append(
                 InlineKeyboardButton(f"🗑 #{name}", callback_data=f"del:{name}")
             )
             buttons.append(row_buttons)
     if sheet_url:
         buttons.append([InlineKeyboardButton("Open Sheet", url=sheet_url)])
     if not delete_only and rows:
+        buttons.append(
+            [InlineKeyboardButton("✅ Mark all as paid", callback_data="pay_all")]
+        )
         buttons.append([InlineKeyboardButton("Download PDF", callback_data="download_pdf")])
         buttons.append([InlineKeyboardButton("Download ZIP", callback_data="download_zip")])
     return InlineKeyboardMarkup(buttons)
@@ -717,25 +726,58 @@ async def delete_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return ConversationHandler.END
 
 
-async def show_records_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    target = update.effective_message
-    if target is None or update.effective_user is None:
-        return
-    rows = await asyncio.to_thread(list_records, update.effective_user.id)
-    if not rows:
-        await target.reply_text("There are no records yet.", reply_markup=main_menu_keyboard())
-        return
-    record = load_user(update.effective_user.id)
-    sheet_url = record.get("spreadsheet_url")
-    preview = "\n".join(
+def _active_list_preview(rows: list[list[str]]) -> str:
+    return "\n".join(
         f"#{row[0]} · {row[1] if len(row) > 1 else ''} · "
         f"{row[2] if len(row) > 2 else ''} · {row[3] if len(row) > 3 else ''}"
         for row in rows[-10:]
     )
-    await target.reply_text(
-        f"Recent receipts:\n{preview}",
-        reply_markup=records_keyboard(rows, sheet_url),
-    )
+
+
+async def _send_active_list_message(
+    message,
+    telegram_id: int,
+    *,
+    edit: bool = False,
+) -> None:
+    rows = await asyncio.to_thread(list_records, telegram_id)
+    record = load_user(telegram_id)
+    sheet_url = record.get("spreadsheet_url")
+    if not rows:
+        text = (
+            "No active receipts.\n"
+            "Paid items stay in your Google Sheet with Status = Paid."
+        )
+        sheet_buttons = (
+            [[InlineKeyboardButton("Open Sheet", url=sheet_url)]] if sheet_url else []
+        )
+        if edit:
+            await message.edit_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(sheet_buttons) if sheet_buttons else None,
+            )
+        else:
+            await message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(sheet_buttons)
+                if sheet_buttons
+                else main_menu_keyboard(),
+            )
+        return
+    preview = _active_list_preview(rows)
+    markup = records_keyboard(rows, sheet_url)
+    text = f"Active receipts (unpaid):\n{preview}"
+    if edit:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.reply_text(text, reply_markup=markup)
+
+
+async def show_records_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    target = update.effective_message
+    if target is None or update.effective_user is None:
+        return
+    await _send_active_list_message(target, update.effective_user.id)
 
 
 async def show_remove_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -744,7 +786,10 @@ async def show_remove_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     rows = await asyncio.to_thread(list_records, update.effective_user.id)
     if not rows:
-        await target.reply_text("There are no records yet.", reply_markup=main_menu_keyboard())
+        await target.reply_text(
+            "No active receipts to remove.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
     record = load_user(update.effective_user.id)
     await target.reply_text(
@@ -843,6 +888,30 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text(f"Removed #{name} from the sheet and Drive.")
     else:
         await query.message.reply_text(f"No record #{name} was found.")
+
+
+@require_google
+async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.message is None or update.effective_user is None:
+        return
+    await query.answer()
+    user_id = update.effective_user.id
+    if query.data == "pay_all":
+        count = await asyncio.to_thread(mark_all_active_paid, user_id)
+        if count == 0:
+            await query.message.reply_text("Nothing to mark as paid.")
+            return
+        await _send_active_list_message(query.message, user_id, edit=True)
+        return
+    if not query.data.startswith("pay:"):
+        return
+    name = query.data.split(":", 1)[1]
+    updated = await asyncio.to_thread(set_record_status, user_id, name, STATUS_PAID)
+    if not updated:
+        await query.message.reply_text(f"No record #{name} was found.")
+        return
+    await _send_active_list_message(query.message, user_id, edit=True)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -979,6 +1048,7 @@ def build_application() -> Application:
     application.add_handler(review_conv)
     application.add_handler(MessageHandler(MENU_NAV_FILTER, menu_router))
     application.add_handler(CallbackQueryHandler(delete_callback, pattern=r"^del:"))
+    application.add_handler(CallbackQueryHandler(paid_callback, pattern=r"^(pay_all|pay:.+)$"))
     application.add_handler(CallbackQueryHandler(download_pdf_callback, pattern=r"^download_pdf$"))
     application.add_handler(CallbackQueryHandler(download_zip_callback, pattern=r"^download_zip$"))
     return application

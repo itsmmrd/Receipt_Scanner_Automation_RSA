@@ -37,7 +37,11 @@ SHEET_HEADERS = [
     "Merchant",
     "File link",
     "Created",
+    "Status",
 ]
+
+STATUS_PAID = "Paid"
+SHEET_STATUS_INDEX = 8
 
 # Google Sheets custom display formats (real date values, not plain text).
 SHEET_DATE_FORMAT = {"type": "DATE", "pattern": "dd.mm.yyyy"}
@@ -244,9 +248,31 @@ def _services(record: dict[str, Any]):
     return _google_service("drive", "v3", creds), _google_service("sheets", "v4", creds)
 
 
+def _sync_sheet_headers(record: dict[str, Any], sheets) -> None:
+    if not record.get("spreadsheet_id"):
+        return
+    header = (
+        sheets.spreadsheets()
+        .values()
+        .get(spreadsheetId=record["spreadsheet_id"], range="A1:I1")
+        .execute()
+        .get("values")
+        or [[]]
+    )[0]
+    if header != SHEET_HEADERS:
+        sheets.spreadsheets().values().update(
+            spreadsheetId=record["spreadsheet_id"],
+            range="A1:I1",
+            valueInputOption="RAW",
+            body={"values": [SHEET_HEADERS]},
+        ).execute()
+
+
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
     record = load_user(telegram_id)
     if record.get("folder_id") and record.get("spreadsheet_id") and record.get("sheet_ready"):
+        _drive, sheets = _services(record)
+        _sync_sheet_headers(record, sheets)
         return record
     drive, sheets = _services(record)
     if not record.get("folder_id"):
@@ -272,7 +298,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
         record["spreadsheet_url"] = created.get("spreadsheetUrl")
         sheets.spreadsheets().values().update(
             spreadsheetId=record["spreadsheet_id"],
-            range="A1:H1",
+            range="A1:I1",
             valueInputOption="RAW",
             body={"values": [SHEET_HEADERS]},
         ).execute()
@@ -283,21 +309,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
         ).execute()
     meta = sheets.spreadsheets().get(spreadsheetId=record["spreadsheet_id"]).execute()
     sheet_id = meta["sheets"][0]["properties"]["sheetId"]
-    header = (
-        sheets.spreadsheets()
-        .values()
-        .get(spreadsheetId=record["spreadsheet_id"], range="A1:H1")
-        .execute()
-        .get("values")
-        or [[]]
-    )[0]
-    if header != SHEET_HEADERS:
-        sheets.spreadsheets().values().update(
-            spreadsheetId=record["spreadsheet_id"],
-            range="A1:H1",
-            valueInputOption="RAW",
-            body={"values": [SHEET_HEADERS]},
-        ).execute()
+    _sync_sheet_headers(record, sheets)
     _apply_sheet_date_formats(sheets, record["spreadsheet_id"], sheet_id)
     record["sheet_ready"] = True
     save_user(record)
@@ -363,7 +375,7 @@ def append_sheet_row(
     _drive, sheets = _services(record)
     sheets.spreadsheets().values().append(
         spreadsheetId=record["spreadsheet_id"],
-        range="A:H",
+        range="A:I",
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
         body={
@@ -377,16 +389,32 @@ def append_sheet_row(
                     merchant or "",
                     file_link,
                     _sheet_created_formula(),
+                    "",
                 ]
             ]
         },
     ).execute()
 
 
-def list_records(telegram_id: int) -> list[list[str]]:
+def _record_status(row: list[str]) -> str:
+    if len(row) <= SHEET_STATUS_INDEX:
+        return ""
+    return str(row[SHEET_STATUS_INDEX] or "").strip()
+
+
+def is_paid_record(row: list[str]) -> bool:
+    return _record_status(row).lower() == STATUS_PAID.lower()
+
+
+def _fetch_sheet_rows(telegram_id: int) -> list[list[str]]:
     record = load_user(telegram_id)
     if not record.get("spreadsheet_id"):
         record = ensure_google_workspace(telegram_id)
+    elif record.get("spreadsheet_id"):
+        creds = credentials_from_record(record)
+        if creds is not None:
+            sheets = _google_service("sheets", "v4", creds)
+            _sync_sheet_headers(record, sheets)
     creds = credentials_from_record(record)
     if creds is None:
         raise RuntimeError("Google account is not connected.")
@@ -394,10 +422,53 @@ def list_records(telegram_id: int) -> list[list[str]]:
     result = (
         sheets.spreadsheets()
         .values()
-        .get(spreadsheetId=record["spreadsheet_id"], range="A2:H")
+        .get(spreadsheetId=record["spreadsheet_id"], range="A2:I")
         .execute()
     )
     return result.get("values") or []
+
+
+def list_all_records(telegram_id: int) -> list[list[str]]:
+    return _fetch_sheet_rows(telegram_id)
+
+
+def list_records(telegram_id: int, *, active_only: bool = True) -> list[list[str]]:
+    rows = _fetch_sheet_rows(telegram_id)
+    if not active_only:
+        return rows
+    return [row for row in rows if not is_paid_record(row)]
+
+
+def _sheet_row_index_for_name(telegram_id: int, name: str) -> int | None:
+    for offset, row in enumerate(list_all_records(telegram_id), start=2):
+        if row and row[0] == name:
+            return offset
+    return None
+
+
+def set_record_status(telegram_id: int, name: str, status: str) -> bool:
+    record = ensure_google_workspace(telegram_id)
+    row_index = _sheet_row_index_for_name(telegram_id, name)
+    if row_index is None:
+        return False
+    _drive, sheets = _services(record)
+    sheets.spreadsheets().values().update(
+        spreadsheetId=record["spreadsheet_id"],
+        range=f"I{row_index}",
+        valueInputOption="RAW",
+        body={"values": [[status]]},
+    ).execute()
+    return True
+
+
+def mark_all_active_paid(telegram_id: int) -> int:
+    active = list_records(telegram_id, active_only=True)
+    count = 0
+    for row in active:
+        name = row[0] if row else ""
+        if name and set_record_status(telegram_id, name, STATUS_PAID):
+            count += 1
+    return count
 
 
 def download_spreadsheet_xlsx(telegram_id: int, dest: Path) -> Path:
@@ -471,12 +542,7 @@ def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
     """Upload or replace the Drive photo for an existing sheet row."""
     record = ensure_google_workspace(telegram_id)
     drive, sheets = _services(record)
-    rows = list_records(telegram_id)
-    row_index = None
-    for offset, row in enumerate(rows, start=2):
-        if row and row[0] == name:
-            row_index = offset
-            break
+    row_index = _sheet_row_index_for_name(telegram_id, name)
     if row_index is None:
         raise ValueError(f"Record #{name} not found.")
     for item in _drive_image_files(drive, record["folder_id"], name):
@@ -494,16 +560,14 @@ def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
 def delete_record(telegram_id: int, name: str) -> bool:
     record = ensure_google_workspace(telegram_id)
     drive, sheets = _services(record)
-    rows = list_records(telegram_id)
-    row_index = None
-    file_link = ""
-    for offset, row in enumerate(rows, start=2):
-        if row and row[0] == name:
-            row_index = offset
-            file_link = row[6] if len(row) > 6 else ""
-            break
+    row_index = _sheet_row_index_for_name(telegram_id, name)
     if row_index is None:
         return False
+    file_link = ""
+    for row in list_all_records(telegram_id):
+        if row and row[0] == name:
+            file_link = row[6] if len(row) > 6 else ""
+            break
     meta = sheets.spreadsheets().get(spreadsheetId=record["spreadsheet_id"]).execute()
     sheet_id = meta["sheets"][0]["properties"]["sheetId"]
     sheets.spreadsheets().batchUpdate(
