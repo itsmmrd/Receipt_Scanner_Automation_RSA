@@ -547,16 +547,14 @@ def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
 def delete_record(telegram_id: int, name: str) -> bool:
     record = ensure_google_workspace(telegram_id)
     drive, sheets = _services(record)
-    rows = list_records(telegram_id)
-    row_index = None
-    file_link = ""
-    for offset, row in enumerate(rows, start=2):
-        if row and row[0] == name:
-            row_index = offset
-            file_link = row[6] if len(row) > 6 else ""
-            break
+    row_index = _sheet_row_index_for_name(telegram_id, name)
     if row_index is None:
         return False
+    file_link = ""
+    for row in list_all_records(telegram_id):
+        if row and row[0] == name:
+            file_link = row[6] if len(row) > 6 else ""
+            break
     meta = sheets.spreadsheets().get(spreadsheetId=record["spreadsheet_id"]).execute()
     sheet_id = meta["sheets"][0]["properties"]["sheetId"]
     sheets.spreadsheets().batchUpdate(
