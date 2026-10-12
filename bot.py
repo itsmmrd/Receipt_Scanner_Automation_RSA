@@ -193,12 +193,8 @@ def records_keyboard(
     if sheet_url:
         buttons.append([InlineKeyboardButton("Open Sheet", url=sheet_url)])
     if not delete_only and rows:
-        buttons.append(
-            [
-                InlineKeyboardButton("Download PDF", callback_data="download_pdf"),
-                InlineKeyboardButton("Download ZIP", callback_data="download_zip"),
-            ]
-        )
+        buttons.append([InlineKeyboardButton("Download PDF", callback_data="download_pdf")])
+        buttons.append([InlineKeyboardButton("Download ZIP", callback_data="download_zip")])
     return InlineKeyboardMarkup(buttons)
 
 
