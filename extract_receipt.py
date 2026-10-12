@@ -10,9 +10,13 @@ Set GEMINI_API_KEY in .env or the environment.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
+import re
 from pathlib import Path
+
+from PIL import Image as PILImage
 
 from google import genai
 from google.genai import types
@@ -23,10 +27,13 @@ DEFAULT_IMAGE = ROOT / "output" / "sample.jpeg"
 OUTPUT_DIR = ROOT / "output"
 
 MODELS = (
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
     "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-pro",
 )
+_preferred_model: str | None = None
+_client: genai.Client | None = None
 
 MIME_TYPES = {
     ".jpg": "image/jpeg",
@@ -102,15 +109,87 @@ def get_api_key() -> str:
     return key
 
 
+def _is_quota(exc: Exception) -> bool:
+    text = str(exc)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text
+
+
+def _is_daily_quota(exc: Exception) -> bool:
+    return "PerDay" in str(exc)
+
+
+def _retry_delay(exc: Exception) -> float | None:
+    match = re.search(r"retry in ([0-9.]+)s", str(exc), re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _model_order() -> tuple[str, ...]:
+    if _preferred_model and _preferred_model in MODELS:
+        return (_preferred_model, *[model for model in MODELS if model != _preferred_model])
+    return MODELS
+
+
+def _client_for(api_key: str | None) -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=api_key or get_api_key())
+    return _client
+
+
+def _image_for_model(image_path: Path) -> tuple[bytes, str]:
+    """Shrink the photo Gemini reads. The file saved to Drive stays the original."""
+    mime = MIME_TYPES.get(image_path.suffix.lower())
+    if mime is None:
+        raise ValueError(f"Unsupported image type: {image_path.suffix}")
+    with PILImage.open(image_path) as image:
+        image = image.convert("RGB")
+        if max(image.size) <= 1280 and image_path.stat().st_size <= 500_000:
+            return image_path.read_bytes(), mime
+        image.thumbnail((1280, 1280), PILImage.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=80)
+        return buffer.getvalue(), "image/jpeg"
+
+
+def _generate(client: genai.Client, contents: list, schema: type[BaseModel]):
+    """Try the fastest model that still has quota. Skip a model instead of waiting on it."""
+    global _preferred_model
+    quota_models: list[str] = []
+    last_error: Exception | None = None
+    for model in _model_order():
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if _is_quota(exc):
+                quota_models.append(model)
+                if model == _preferred_model:
+                    _preferred_model = None
+            continue
+        _preferred_model = model
+        return response
+    if quota_models and (last_error is None or _is_quota(last_error)):
+        raise RuntimeError(
+            "Gemini free quota is used up for today. "
+            "Try again after midnight Pacific time, or enable billing on the API key."
+        )
+    raise RuntimeError(f"Gemini request failed: {last_error}")
+
+
 def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo:
     if not image_path.is_file():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    mime = MIME_TYPES.get(image_path.suffix.lower())
-    if mime is None:
-        raise ValueError(f"Unsupported image type: {image_path.suffix}")
-
-    client = genai.Client(api_key=api_key or get_api_key())
+    client = _client_for(api_key)
     prompt = (
         "Read this receipt photo and extract the purchase details. "
         "Use the printed total, do not add line items yourself. "
@@ -121,28 +200,14 @@ def extract_receipt(image_path: Path, api_key: str | None = None) -> ReceiptInfo
         "from the items and time when possible. "
         "If a field is unreadable, return null for that field."
     )
-    image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
-    last_error: Exception | None = None
-
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[image_part, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ReceiptInfo,
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            if response.text:
-                return ReceiptInfo.model_validate_json(response.text)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
-
-    raise RuntimeError(f"Gemini could not extract receipt data: {last_error}")
+    image_bytes, image_mime = _image_for_model(image_path)
+    image_part = types.Part.from_bytes(data=image_bytes, mime_type=image_mime)
+    response = _generate(client, [image_part, prompt], ReceiptInfo)
+    if response.parsed is not None:
+        return response.parsed
+    if response.text:
+        return ReceiptInfo.model_validate_json(response.text)
+    raise RuntimeError("Gemini returned an empty receipt.")
 
 
 def extract_receipt_from_text(text: str, api_key: str | None = None) -> ReceiptInfo:
@@ -159,25 +224,60 @@ def extract_receipt_from_text(text: str, api_key: str | None = None) -> ReceiptI
         "Use null for unknown fields.\n\n"
         f"User text:\n{cleaned}"
     )
-    last_error: Exception | None = None
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ReceiptInfo,
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            if response.text:
-                return ReceiptInfo.model_validate_json(response.text)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
-    raise RuntimeError(f"Gemini could not parse receipt text: {last_error}")
+    response = _generate(client, [prompt], ReceiptInfo)
+    if response.parsed is not None:
+        return response.parsed
+    if response.text:
+        return ReceiptInfo.model_validate_json(response.text)
+    raise RuntimeError("Gemini returned an empty receipt.")
+
+
+class PageCorners(BaseModel):
+    found: bool = Field(
+        description=(
+            "True when a paper page is visible inside the photo and its edges "
+            "can be marked. False when the photo is already just the page."
+        ),
+    )
+    top_left_x: int = Field(description="0 to 1000, across the image width.")
+    top_left_y: int = Field(description="0 to 1000, down the image height.")
+    top_right_x: int = Field(description="0 to 1000, across the image width.")
+    top_right_y: int = Field(description="0 to 1000, down the image height.")
+    bottom_right_x: int = Field(description="0 to 1000, across the image width.")
+    bottom_right_y: int = Field(description="0 to 1000, down the image height.")
+    bottom_left_x: int = Field(description="0 to 1000, across the image width.")
+    bottom_left_y: int = Field(description="0 to 1000, down the image height.")
+
+
+def locate_page_corners(image_path: Path, api_key: str | None = None) -> PageCorners | None:
+    """Ask Gemini for the paper's four corners. None if the call fails."""
+    if not image_path.is_file():
+        return None
+    mime = MIME_TYPES.get(image_path.suffix.lower())
+    if mime is None:
+        return None
+    try:
+        client = genai.Client(api_key=api_key or get_api_key())
+    except RuntimeError:
+        return None
+    prompt = (
+        "Find the four corners of the physical paper page in this photo. "
+        "Coordinates are integers from 0 to 1000: x goes left to right, y goes top to bottom. "
+        "Order is the page's own top-left, top-right, bottom-right, bottom-left, "
+        "even if the page is rotated or tilted. "
+        "Mark the paper edges, not a table or a block of text inside the page. "
+        "If the photo is already a flat scan with no background around the page, set found to false."
+    )
+    image_part = types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
+    try:
+        response = _generate(client, [image_part, prompt], PageCorners)
+    except RuntimeError:
+        return None
+    if response.parsed is not None:
+        return response.parsed
+    if response.text:
+        return PageCorners.model_validate_json(response.text)
+    return None
 
 
 class NormalizedField(BaseModel):
@@ -234,37 +334,26 @@ def normalize_edit_field(field: str, raw: str, api_key: str | None = None) -> st
         "Return JSON with a single 'value' field.\n\n"
         f"User input: {cleaned}"
     )
-    last_error: Exception | None = None
-    for model in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=NormalizedField,
-                ),
-            )
-            parsed = response.parsed
-            if parsed is None and response.text:
-                parsed = NormalizedField.model_validate_json(response.text)
-            if parsed is None or parsed.value is None:
-                raise ValueError(f"Could not normalize {field}.")
-            if field == "amount":
-                amount = _parse_amount_local(parsed.value)
-                if amount is None:
-                    raise ValueError(f"Could not normalize amount: {parsed.value}")
+    try:
+        response = _generate(client, [prompt], NormalizedField)
+    except RuntimeError:
+        response = None
+    parsed = None if response is None else response.parsed
+    if parsed is None and response is not None and response.text:
+        parsed = NormalizedField.model_validate_json(response.text)
+    if parsed is not None and parsed.value is not None:
+        if field == "amount":
+            amount = _parse_amount_local(parsed.value)
+            if amount is not None:
                 return amount
+        else:
             return parsed.value.strip()
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
 
     if field == "amount":
         local = _parse_amount_local(cleaned)
         if local is not None:
             return local
-    raise RuntimeError(f"Gemini could not normalize {field}: {last_error}")
+    raise RuntimeError(f"Gemini could not normalize {field}.")
 
 
 def save_receipt(info: ReceiptInfo, image_path: Path) -> Path:
