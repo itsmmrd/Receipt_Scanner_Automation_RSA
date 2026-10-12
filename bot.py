@@ -900,21 +900,22 @@ async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer()
     user_id = update.effective_user.id
     if query.data == "pay_all":
-        await query.message.reply_text("Updating statuses…")
         count = await asyncio.to_thread(mark_all_active_paid, user_id)
         if count == 0:
             await query.message.reply_text("Nothing to mark as paid.")
             return
-        await _send_active_list_message(query.message, user_id, edit=True)
+        await _send_active_list_message(query.message, user_id, edit=True, rows=[])
         return
     if not query.data.startswith("pay:"):
         return
     name = query.data.split(":", 1)[1]
-    updated = await asyncio.to_thread(set_record_status, user_id, name, STATUS_PAID)
-    if not updated:
+    active_rows = await asyncio.to_thread(mark_record_paid, user_id, name)
+    if active_rows is None:
         await query.message.reply_text(f"No record #{name} was found.")
         return
-    await _send_active_list_message(query.message, user_id, edit=True)
+    await _send_active_list_message(
+        query.message, user_id, edit=True, rows=active_rows
+    )
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
