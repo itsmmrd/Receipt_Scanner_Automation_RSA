@@ -298,7 +298,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
         record["spreadsheet_url"] = created.get("spreadsheetUrl")
         sheets.spreadsheets().values().update(
             spreadsheetId=record["spreadsheet_id"],
-            range="A1:H1",
+            range="A1:I1",
             valueInputOption="RAW",
             body={"values": [SHEET_HEADERS]},
         ).execute()
@@ -309,21 +309,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
         ).execute()
     meta = sheets.spreadsheets().get(spreadsheetId=record["spreadsheet_id"]).execute()
     sheet_id = meta["sheets"][0]["properties"]["sheetId"]
-    header = (
-        sheets.spreadsheets()
-        .values()
-        .get(spreadsheetId=record["spreadsheet_id"], range="A1:H1")
-        .execute()
-        .get("values")
-        or [[]]
-    )[0]
-    if header != SHEET_HEADERS:
-        sheets.spreadsheets().values().update(
-            spreadsheetId=record["spreadsheet_id"],
-            range="A1:H1",
-            valueInputOption="RAW",
-            body={"values": [SHEET_HEADERS]},
-        ).execute()
+    _sync_sheet_headers(record, sheets)
     _apply_sheet_date_formats(sheets, record["spreadsheet_id"], sheet_id)
     record["sheet_ready"] = True
     save_user(record)
