@@ -1036,6 +1036,7 @@ def build_application() -> Application:
     application.add_handler(review_conv)
     application.add_handler(MessageHandler(MENU_NAV_FILTER, menu_router))
     application.add_handler(CallbackQueryHandler(delete_callback, pattern=r"^del:"))
+    application.add_handler(CallbackQueryHandler(paid_callback, pattern=r"^(pay_all|pay:.+)$"))
     application.add_handler(CallbackQueryHandler(download_pdf_callback, pattern=r"^download_pdf$"))
     application.add_handler(CallbackQueryHandler(download_zip_callback, pattern=r"^download_zip$"))
     return application
