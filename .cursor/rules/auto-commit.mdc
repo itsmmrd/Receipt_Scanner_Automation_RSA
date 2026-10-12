@@ -1,0 +1,26 @@
+---
+description: After each finished change, commit automatically and describe what changed
+alwaysApply: true
+---
+
+# Auto commit with change details
+
+When a task changes files, commit that work before you stop. Do not wait to be asked again.
+
+## When to commit
+
+- Commit once the task is done and the related files are saved.
+- One task, one commit. Keep unrelated edits out of the same commit.
+- Skip secrets (`.env`, credentials, tokens) and warn if they were requested.
+- Do not create an empty commit.
+- Do not push unless the user asks.
+
+## Commit message
+
+`.cursor/hooks/auto-commit.sh` commits through `scripts/commit_message.py`. The message is one short sentence about the behavior that changed.
+
+```
+Straighten the receipt photo to the page frame
+```
+
+Do not put source code, function names, or a list of lines in the message.

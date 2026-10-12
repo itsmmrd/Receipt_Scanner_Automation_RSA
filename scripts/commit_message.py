@@ -101,12 +101,113 @@ def title_for_files(files: list[str], added: list[str]) -> str:
     return f"Update {pretty}"
 
 
+def _hunks(diff: str) -> list[tuple[str, str, list[str]]]:
+    file_name = ""
+    func = ""
+    added: list[str] = []
+    hunks: list[tuple[str, str, list[str]]] = []
+
+    def flush() -> None:
+        if file_name and added:
+            hunks.append((file_name, func, list(added)))
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git"):
+            flush()
+            file_name = ""
+            func = ""
+            added = []
+        elif line.startswith("+++ b/"):
+            file_name = line[6:]
+        elif line.startswith("@@"):
+            flush()
+            added = []
+            parts = line.split("@@")
+            func = parts[2].strip() if len(parts) > 2 else ""
+        elif line.startswith("+") and not line.startswith("+++"):
+            text = line[1:].strip()
+            if text and not text.startswith(("import ", "from ")):
+                added.append(text)
+    flush()
+    return hunks
+
+
+def _clean_line(line: str) -> str:
+    text = line.strip().lstrip("-").strip().strip("`")
+    if text.startswith(("```", "---", "|", "#")):
+        return ""
+    return text
+
+
+def _bullet(file_name: str, func: str, added: list[str]) -> str:
+    name = Path(file_name).name
+    defs = [
+        line.split("(", 1)[0].removeprefix("async ").strip()
+        for line in added
+        if line.startswith(("def ", "async def ", "class "))
+    ]
+    if defs:
+        return f"{name}: {', '.join(defs[:3])}"
+    for line in added:
+        cleaned = _clean_line(line)
+        if len(cleaned) >= 24:
+            return f"{name}: {cleaned[:140]}"
+    context = func if func.startswith(("def ", "class ", "async def ")) else ""
+    where = f" in {context}" if context else ""
+    snippet = _clean_line(added[0]) or added[0].strip()
+    return f"{name}{where}: {snippet[:140]}"
+
+
+def change_details() -> list[str]:
+    diff = run("diff", "--cached", "--unified=3")
+    bullets: list[str] = []
+    seen: set[str] = set()
+    for file_name, func, added in _hunks(diff):
+        bullet = _bullet(file_name, func, added)
+        if bullet in seen:
+            continue
+        seen.add(bullet)
+        bullets.append(bullet)
+        if len(bullets) == 8:
+            break
+    return bullets
+
+
+def short_summary(files: list[str], added: list[str]) -> str:
+    """One sentence about the change. Never a line of source code."""
+    names = {Path(path).name for path in files}
+    if names & {"commit_message.py", "auto-commit.mdc", "auto-commit.sh"}:
+        return "Use a short sentence for each commit"
+    title = title_for_files(files, added)
+    if not title.startswith("Update "):
+        return title
+    if "receipt_pdf.py" in names and "ReceiptSheet" in "\n".join(added):
+        return "Put each receipt number on the same PDF page as its photo"
+    if "extract_receipt.py" in names and "_image_for_model" in "\n".join(added):
+        return "Read receipts from a smaller photo so the scan finishes sooner"
+    if "receipt_pdf.py" in names or "Download PDF" in "\n".join(added):
+        return "Save original photos and download them in a PDF"
+    if names & {"scan_document.py", "document_segment.py"}:
+        return "Straighten the receipt photo to the page frame"
+    if names & {"google_services.py"}:
+        return "Speed up Google Drive and Sheets calls"
+    if names & {"bot.py"}:
+        return "Adjust the Telegram receipt flow"
+    if names & {"commit_message.py", "auto-commit.mdc", "auto-commit.sh"}:
+        return "Use a short sentence for each commit"
+    if names & {"requirements.txt"}:
+        return "Update Python dependencies"
+    if len(names) == 1:
+        return f"Update {next(iter(names))}"
+    return "Update " + ", ".join(sorted(names))
+
+
 def main() -> None:
     files = staged_files()
     if not files:
         print("Update project files")
         return
-    print(title_for_files(files, added_lines()))
+    print(short_summary(files, added_lines()))
 
 
 if __name__ == "__main__":

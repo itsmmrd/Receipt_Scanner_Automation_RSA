@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 from pathlib import Path
 from aiohttp import web
 from telegram import (
@@ -53,7 +54,8 @@ from receipt_format import (
     format_amount,
     format_display_date,
 )
-from scan_document import ensure_telegram_photo_file, scan_image
+from receipt_pdf import build_receipts_pdf
+from scan_document import ensure_telegram_photo_file
 from storage import is_google_connected, load_user
 
 load_env_file()
@@ -189,6 +191,8 @@ def records_keyboard(
             buttons.append(row_buttons)
     if sheet_url:
         buttons.append([InlineKeyboardButton("Open Sheet", url=sheet_url)])
+    if not delete_only and rows:
+        buttons.append([InlineKeyboardButton("Download PDF", callback_data="download_pdf")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -256,10 +260,7 @@ def edit_keyboard() -> InlineKeyboardMarkup:
 def review_keyboard(info: ReceiptInfo) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("Save result", callback_data="save_result"),
-                InlineKeyboardButton("Save original", callback_data="save_original"),
-            ],
+            [InlineKeyboardButton("Save", callback_data="save_original")],
             [InlineKeyboardButton("Link to existing", callback_data="link_existing")],
             [
                 edit_text_button(),
@@ -396,50 +397,82 @@ async def connect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+async def review_saved_upload(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    original: Path,
+    *,
+    announce: bool = True,
+) -> int:
+    """Read the uploaded file as-is. The saved copy is this file, not a crop."""
+    if announce:
+        await message.reply_text("Reading receipt...")
+    try:
+        info = await asyncio.to_thread(extract_receipt, original)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Extract failed")
+        await message.reply_text(f"Could not process this photo: {exc}")
+        return ConversationHandler.END
+
+    preview = original.with_name(f"preview{original.suffix}")
+    shutil.copyfile(original, preview)
+    store_info(context, info)
+    context.user_data["original"] = str(original)
+    context.user_data["processed"] = str(original)
+    context.user_data["has_photo"] = True
+    persist_review_session(context, user_id)
+    name = next_receipt_name(user_id, info.date)
+    await reply_processed_preview(
+        message,
+        preview,
+        caption=f"{format_info(info, name)}\n\nSave this photo?",
+        reply_markup=review_keyboard(info),
+    )
+    return REVIEW
+
+
 @require_google
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
+    await message.reply_text("Reading receipt...")
     photo = message.photo[-1]
     user_dir = TMP_DIR / str(update.effective_user.id)
     user_dir.mkdir(parents=True, exist_ok=True)
     original = user_dir / "original.jpg"
-    processed = user_dir / "processed.jpg"
-
-    await message.reply_text("Reading receipt...")
     file = await photo.get_file()
     await file.download_to_drive(original)
-
-    try:
-        # AI reads the original upload; scan/clean is only for preview and saving.
-        info = await asyncio.to_thread(extract_receipt, original)
-        await asyncio.to_thread(scan_image, original, False, processed)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Extract/scan failed")
-        await message.reply_text(f"Could not process this photo: {exc}")
-        return ConversationHandler.END
-
-    store_info(context, info)
-    context.user_data["original"] = str(original)
-    context.user_data["processed"] = str(processed)
-    context.user_data["has_photo"] = True
-    persist_review_session(context, update.effective_user.id)
-    name = next_receipt_name(update.effective_user.id, info.date)
-    await reply_processed_preview(
-        message,
-        processed,
-        caption=(
-            f"Processed result\n\n{format_info(info, name)}\n\n"
-            "Is this result OK?"
-        ),
-        reply_markup=review_keyboard(info),
+    return await review_saved_upload(
+        message, context, update.effective_user.id, original, announce=False
     )
-    return REVIEW
+
+
+@require_google
+async def handle_image_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    document = message.document
+    suffix = Path(document.file_name or "receipt.jpg").suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        await message.reply_text("Send a photo or an image file.")
+        return ConversationHandler.END
+    user_dir = TMP_DIR / str(update.effective_user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    original = user_dir / f"original{suffix}"
+    file = await document.get_file()
+    await file.download_to_drive(original)
+    return await review_saved_upload(message, context, update.effective_user.id, original)
 
 
 async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     action = query.data
+    if action == "download_pdf":
+        await download_pdf_callback(update, context)
+        return REVIEW
     if action == "cancel":
         await edit_callback_message(query, "Cancelled. Nothing was saved.")
         return ConversationHandler.END
@@ -464,8 +497,7 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text("Send the receipt photo to attach.")
         return MANUAL_ATTACH
     if action in {"save_result", "save_original"}:
-        use_original = action == "save_original"
-        await save_current(update, context, use_original=use_original, photo_required=True)
+        await save_current(update, context, use_original=True, photo_required=True)
         return ConversationHandler.END
     return REVIEW
 
@@ -737,9 +769,30 @@ async def sheet_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await target.reply_text(
         "Your RSA spreadsheet:",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Open Sheet", url=sheet_url)]]
+            [
+                [InlineKeyboardButton("Open Sheet", url=sheet_url)],
+                [InlineKeyboardButton("Download PDF", callback_data="download_pdf")],
+            ]
         ),
     )
+
+
+@require_google
+async def download_pdf_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Building the PDF...")
+    try:
+        path = await asyncio.to_thread(build_receipts_pdf, query.from_user.id)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("PDF export failed")
+        await query.message.reply_text(f"Could not build the PDF: {exc}")
+        return
+    with path.open("rb") as handle:
+        await query.message.reply_document(
+            document=InputFile(handle, filename="receipts.pdf"),
+            caption="The table is first. Each photo follows, labeled with its receipt number.",
+        )
 
 
 @require_google
@@ -878,6 +931,7 @@ def build_application() -> Application:
     review_conv = ConversationHandler(
         entry_points=[
             MessageHandler(filters.PHOTO, handle_photo),
+            MessageHandler(filters.Document.IMAGE, handle_image_file),
             CommandHandler("add", add_start),
             CommandHandler("text", text_start),
             CommandHandler("delete", delete_start),
@@ -904,6 +958,7 @@ def build_application() -> Application:
     application.add_handler(review_conv)
     application.add_handler(MessageHandler(MENU_NAV_FILTER, menu_router))
     application.add_handler(CallbackQueryHandler(delete_callback, pattern=r"^del:"))
+    application.add_handler(CallbackQueryHandler(download_pdf_callback, pattern=r"^download_pdf$"))
     return application
 
 

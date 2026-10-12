@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 from config import (
     APP_NAME,
@@ -214,17 +215,39 @@ def finish_oauth(telegram_id: int, callback_url: str) -> dict[str, Any]:
     return load_user(telegram_id)
 
 
+_built_services: dict[str, tuple[str, Any]] = {}
+_service_lock = threading.Lock()
+
+
+def _google_service(name: str, version: str, creds: Credentials):
+    """Reuse one API client per access token. Building a client downloads discovery docs."""
+    token = creds.token or ""
+    with _service_lock:
+        cached = _built_services.get(name)
+        if cached is not None and cached[0] == token:
+            return cached[1]
+        service = build(
+            name,
+            version,
+            credentials=creds,
+            cache_discovery=False,
+            static_discovery=True,
+        )
+        _built_services[name] = (token, service)
+        return service
+
+
 def _services(record: dict[str, Any]):
     creds = credentials_from_record(record)
     if creds is None:
         raise RuntimeError("Google account is not connected.")
-    return build("drive", "v3", credentials=creds), build(
-        "sheets", "v4", credentials=creds
-    )
+    return _google_service("drive", "v3", creds), _google_service("sheets", "v4", creds)
 
 
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
     record = load_user(telegram_id)
+    if record.get("folder_id") and record.get("spreadsheet_id") and record.get("sheet_ready"):
+        return record
     drive, sheets = _services(record)
     if not record.get("folder_id"):
         created = (
@@ -276,6 +299,7 @@ def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
             body={"values": [SHEET_HEADERS]},
         ).execute()
     _apply_sheet_date_formats(sheets, record["spreadsheet_id"], sheet_id)
+    record["sheet_ready"] = True
     save_user(record)
     return record
 
@@ -298,7 +322,16 @@ def allocate_receipt_name(telegram_id: int, date_text: str | None = None) -> str
 def upload_receipt_file(telegram_id: int, path: Path, name: str) -> str:
     record = ensure_google_workspace(telegram_id)
     drive, _sheets = _services(record)
-    media = MediaFileUpload(str(path), mimetype="image/jpeg", resumable=True)
+    mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+    }.get(path.suffix.lower(), "image/jpeg")
+    media = MediaFileUpload(str(path), mimetype=mime, resumable=True)
     uploaded = (
         drive.files()
         .create(
@@ -351,8 +384,13 @@ def append_sheet_row(
 
 
 def list_records(telegram_id: int) -> list[list[str]]:
-    record = ensure_google_workspace(telegram_id)
-    _drive, sheets = _services(record)
+    record = load_user(telegram_id)
+    if not record.get("spreadsheet_id"):
+        record = ensure_google_workspace(telegram_id)
+    creds = credentials_from_record(record)
+    if creds is None:
+        raise RuntimeError("Google account is not connected.")
+    sheets = _google_service("sheets", "v4", creds)
     result = (
         sheets.spreadsheets()
         .values()
@@ -374,6 +412,34 @@ def _drive_image_files(drive, folder_id: str, name: str) -> list[dict[str, Any]]
         if mime.startswith("image/") or mime == "application/pdf":
             images.append(item)
     return images
+
+
+def download_receipt_image(telegram_id: int, name: str, dest: Path) -> Path | None:
+    """Save the Drive photo for a receipt number. None when that row has no image."""
+    record = load_user(telegram_id)
+    if not record.get("folder_id"):
+        return None
+    creds = credentials_from_record(record)
+    if creds is None:
+        return None
+    drive = _google_service("drive", "v3", creds)
+    files = _drive_image_files(drive, record["folder_id"], name)
+    images = [
+        item
+        for item in files
+        if (item.get("mimeType") or "").startswith("image/")
+        and Path(item.get("name") or "").stem == name
+    ]
+    if not images:
+        return None
+    request = drive.files().get_media(fileId=images[0]["id"])
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as handle:
+        downloader = MediaIoBaseDownload(handle, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+    return dest
 
 
 def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
