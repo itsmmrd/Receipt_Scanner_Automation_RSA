@@ -878,6 +878,30 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text(f"No record #{name} was found.")
 
 
+@require_google
+async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.message is None or update.effective_user is None:
+        return
+    await query.answer()
+    user_id = update.effective_user.id
+    if query.data == "pay_all":
+        count = await asyncio.to_thread(mark_all_active_paid, user_id)
+        if count == 0:
+            await query.message.reply_text("Nothing to mark as paid.")
+            return
+        await _send_active_list_message(query.message, user_id, edit=True)
+        return
+    if not query.data.startswith("pay:"):
+        return
+    name = query.data.split(":", 1)[1]
+    updated = await asyncio.to_thread(set_record_status, user_id, name, STATUS_PAID)
+    if not updated:
+        await query.message.reply_text(f"No record #{name} was found.")
+        return
+    await _send_active_list_message(query.message, user_id, edit=True)
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
