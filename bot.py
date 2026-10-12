@@ -748,12 +748,21 @@ async def _send_active_list_message(
             "No active receipts.\n"
             "Paid items stay in your Google Sheet with Status = Paid."
         )
-        markup = main_menu_keyboard()
+        sheet_buttons = (
+            [[InlineKeyboardButton("Open Sheet", url=sheet_url)]] if sheet_url else []
+        )
         if edit:
-            await message.edit_text(text, reply_markup=None)
-            await message.reply_text("Main menu:", reply_markup=markup)
+            await message.edit_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(sheet_buttons) if sheet_buttons else None,
+            )
         else:
-            await message.reply_text(text, reply_markup=markup)
+            await message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(sheet_buttons)
+                if sheet_buttons
+                else main_menu_keyboard(),
+            )
         return
     preview = _active_list_preview(rows)
     markup = records_keyboard(rows, sheet_url)
