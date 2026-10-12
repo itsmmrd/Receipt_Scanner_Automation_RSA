@@ -432,16 +432,23 @@ def list_records(telegram_id: int, *, active_only: bool = True) -> list[list[str
     return [row for row in rows if not is_paid_record(row)]
 
 
-def _sheet_row_index_for_name(telegram_id: int, name: str) -> int | None:
-    for offset, row in enumerate(list_all_records(telegram_id), start=2):
+def _sheet_row_index_from_rows(rows: list[list[str]], name: str) -> int | None:
+    for offset, row in enumerate(rows, start=2):
         if row and row[0] == name:
             return offset
     return None
 
 
+def _sheet_row_index_for_name(telegram_id: int, name: str) -> int | None:
+    return _sheet_row_index_from_rows(list_all_records(telegram_id), name)
+
+
 def set_record_status(telegram_id: int, name: str, status: str) -> bool:
-    record = ensure_google_workspace(telegram_id)
-    row_index = _sheet_row_index_for_name(telegram_id, name)
+    record = load_user(telegram_id)
+    if not record.get("spreadsheet_id"):
+        record = ensure_google_workspace(telegram_id)
+    rows = list_all_records(telegram_id)
+    row_index = _sheet_row_index_from_rows(rows, name)
     if row_index is None:
         return False
     _drive, sheets = _services(record)
@@ -455,13 +462,23 @@ def set_record_status(telegram_id: int, name: str, status: str) -> bool:
 
 
 def mark_all_active_paid(telegram_id: int) -> int:
-    active = list_records(telegram_id, active_only=True)
-    count = 0
-    for row in active:
-        name = row[0] if row else ""
-        if name and set_record_status(telegram_id, name, STATUS_PAID):
-            count += 1
-    return count
+    record = load_user(telegram_id)
+    if not record.get("spreadsheet_id"):
+        record = ensure_google_workspace(telegram_id)
+    rows = list_all_records(telegram_id)
+    updates: list[dict[str, Any]] = []
+    for offset, row in enumerate(rows, start=2):
+        if not row or not row[0] or is_paid_record(row):
+            continue
+        updates.append({"range": f"I{offset}", "values": [[STATUS_PAID]]})
+    if not updates:
+        return 0
+    _drive, sheets = _services(record)
+    sheets.spreadsheets().values().batchUpdate(
+        spreadsheetId=record["spreadsheet_id"],
+        body={"valueInputOption": "RAW", "data": updates},
+    ).execute()
+    return len(updates)
 
 
 def download_spreadsheet_xlsx(telegram_id: int, dest: Path) -> Path:
