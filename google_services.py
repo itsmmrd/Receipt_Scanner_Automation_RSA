@@ -248,9 +248,31 @@ def _services(record: dict[str, Any]):
     return _google_service("drive", "v3", creds), _google_service("sheets", "v4", creds)
 
 
+def _sync_sheet_headers(record: dict[str, Any], sheets) -> None:
+    if not record.get("spreadsheet_id"):
+        return
+    header = (
+        sheets.spreadsheets()
+        .values()
+        .get(spreadsheetId=record["spreadsheet_id"], range="A1:I1")
+        .execute()
+        .get("values")
+        or [[]]
+    )[0]
+    if header != SHEET_HEADERS:
+        sheets.spreadsheets().values().update(
+            spreadsheetId=record["spreadsheet_id"],
+            range="A1:I1",
+            valueInputOption="RAW",
+            body={"values": [SHEET_HEADERS]},
+        ).execute()
+
+
 def ensure_google_workspace(telegram_id: int) -> dict[str, Any]:
     record = load_user(telegram_id)
     if record.get("folder_id") and record.get("spreadsheet_id") and record.get("sheet_ready"):
+        _drive, sheets = _services(record)
+        _sync_sheet_headers(record, sheets)
         return record
     drive, sheets = _services(record)
     if not record.get("folder_id"):
