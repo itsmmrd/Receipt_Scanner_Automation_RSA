@@ -898,6 +898,7 @@ async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer()
     user_id = update.effective_user.id
     if query.data == "pay_all":
+        await query.message.reply_text("Updating statuses…")
         count = await asyncio.to_thread(mark_all_active_paid, user_id)
         if count == 0:
             await query.message.reply_text("Nothing to mark as paid.")
