@@ -739,8 +739,10 @@ async def _send_active_list_message(
     telegram_id: int,
     *,
     edit: bool = False,
+    rows: list[list[str]] | None = None,
 ) -> None:
-    rows = await asyncio.to_thread(list_records, telegram_id)
+    if rows is None:
+        rows = await asyncio.to_thread(list_records, telegram_id)
     record = load_user(telegram_id)
     sheet_url = record.get("spreadsheet_url")
     if not rows:
