@@ -45,7 +45,7 @@ from google_services import (
     finish_oauth,
     list_records,
     mark_all_active_paid,
-    set_record_status,
+    mark_record_paid,
     STATUS_PAID,
     next_receipt_name,
     public_base_url,
