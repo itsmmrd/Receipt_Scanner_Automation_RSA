@@ -529,12 +529,7 @@ def attach_photo_to_record(telegram_id: int, name: str, path: Path) -> str:
     """Upload or replace the Drive photo for an existing sheet row."""
     record = ensure_google_workspace(telegram_id)
     drive, sheets = _services(record)
-    rows = list_records(telegram_id)
-    row_index = None
-    for offset, row in enumerate(rows, start=2):
-        if row and row[0] == name:
-            row_index = offset
-            break
+    row_index = _sheet_row_index_for_name(telegram_id, name)
     if row_index is None:
         raise ValueError(f"Record #{name} not found.")
     for item in _drive_image_files(drive, record["folder_id"], name):
